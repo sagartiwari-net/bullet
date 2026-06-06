@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Auth Checker</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0f1117;
+      color: #e4e4e7;
+      min-height: 100vh;
+    }
+    .header {
+      background: #1a1d27;
+      border-bottom: 1px solid #2a2d3a;
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .header h1 { font-size: 18px; font-weight: 600; }
+    .badge {
+      background: #22c55e22;
+      color: #22c55e;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 99px;
+      border: 1px solid #22c55e44;
+    }
+    .container { max-width: 1100px; margin: 0 auto; padding: 24px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
+    .card {
+      background: #1a1d27;
+      border: 1px solid #2a2d3a;
+      border-radius: 10px;
+      padding: 20px;
+    }
+    .card h2 { font-size: 13px; color: #71717a; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 16px; }
+    label { display: block; font-size: 13px; color: #a1a1aa; margin-bottom: 6px; }
+    select, input {
+      width: 100%;
+      background: #0f1117;
+      border: 1px solid #2a2d3a;
+      color: #e4e4e7;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 14px;
+      margin-bottom: 12px;
+    }
+    .btn-row { display: flex; gap: 8px; margin-top: 4px; }
+    button {
+      flex: 1;
+      padding: 10px;
+      border-radius: 6px;
+      border: none;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .btn-run { background: #22c55e; color: #000; }
+    .btn-run:hover { background: #16a34a; }
+    .btn-stop { background: #ef4444; color: #fff; }
+    .btn-test { background: #3b82f6; color: #fff; }
+    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+    .stat-box {
+      background: #0f1117;
+      border: 1px solid #2a2d3a;
+      border-radius: 8px;
+      padding: 14px;
+      text-align: center;
+    }
+    .stat-val { font-size: 24px; font-weight: 700; }
+    .stat-lbl { font-size: 11px; color: #71717a; margin-top: 4px; }
+    .hit { color: #22c55e; }
+    .fail { color: #ef4444; }
+    .cpm { color: #3b82f6; }
+    .hits-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 12px; }
+    .hits-table th { text-align: left; color: #71717a; padding: 8px; border-bottom: 1px solid #2a2d3a; }
+    .hits-table td { padding: 8px; border-bottom: 1px solid #1f2230; }
+    .status-running { color: #22c55e; }
+    .status-idle { color: #71717a; }
+    .full { grid-column: 1 / -1; }
+    .note {
+      background: #1e2a3a;
+      border: 1px solid #2a4a6a;
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 13px;
+      color: #93c5fd;
+      margin-bottom: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Auth Checker</h1>
+    <span class="badge">v0.1 Demo</span>
+    <span id="runStatus" class="status-idle" style="margin-left:auto;font-size:13px;">Idle</span>
+  </div>
+
+  <div class="container">
+    <div class="note">
+      Demo mode: pehle <code>demo-server</code> chalao (port 3000), phir yahan se run karo.
+      Config manually YAML file se add hoti hai — UI se config builder Phase 2 mein aayega.
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h2>Run Job</h2>
+        <label>Config</label>
+        <select id="configSelect"></select>
+        <label>Wordlist</label>
+        <select id="wordlistSelect"></select>
+        <label>Max Bots (parallel)</label>
+        <input id="maxBots" type="number" value="10" min="1" max="200">
+        <label>Proxy file path (optional)</label>
+        <input id="proxyFile" type="text" placeholder="/path/to/proxies.txt">
+        <div class="btn-row">
+          <button class="btn-run" onclick="startRun()">▶ Run</button>
+          <button class="btn-stop" onclick="stopRun()">■ Stop</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Test Single</h2>
+        <label>Email / Username</label>
+        <input id="testEmail" type="text" placeholder="test@demo.com">
+        <label>Password</label>
+        <input id="testPass" type="text" placeholder="password123">
+        <button class="btn-test" onclick="testSingle()">Test One</button>
+        <pre id="testResult" style="margin-top:12px;font-size:12px;color:#a1a1aa;white-space:pre-wrap;"></pre>
+      </div>
+
+      <div class="card full">
+        <h2>Live Stats</h2>
+        <div class="stats-grid">
+          <div class="stat-box"><div class="stat-val" id="sTotal">0</div><div class="stat-lbl">Total</div></div>
+          <div class="stat-box"><div class="stat-val" id="sChecked">0</div><div class="stat-lbl">Checked</div></div>
+          <div class="stat-box"><div class="stat-val hit" id="sHits">0</div><div class="stat-lbl">Hits</div></div>
+          <div class="stat-box"><div class="stat-val fail" id="sFails">0</div><div class="stat-lbl">Fails</div></div>
+          <div class="stat-box"><div class="stat-val cpm" id="sCPM">0</div><div class="stat-lbl">CPM</div></div>
+          <div class="stat-box"><div class="stat-val" id="sRetry">0</div><div class="stat-lbl">Retries</div></div>
+          <div class="stat-box"><div class="stat-val" id="sError">0</div><div class="stat-lbl">Errors</div></div>
+        </div>
+      </div>
+
+      <div class="card full">
+        <h2>Hits</h2>
+        <table class="hits-table">
+          <thead><tr><th>Email</th><th>Password</th><th>Capture</th><th>Status</th></tr></thead>
+          <tbody id="hitsBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    async function loadOptions() {
+      const [configs, wordlists] = await Promise.all([
+        fetch('/api/configs').then(r => r.json()),
+        fetch('/api/wordlists').then(r => r.json()),
+      ]);
+      const cs = document.getElementById('configSelect');
+      const ws = document.getElementById('wordlistSelect');
+      cs.innerHTML = configs.map(c => `<option value="${c}">${c}</option>`).join('');
+      ws.innerHTML = wordlists.map(w => `<option value="${w}">${w}</option>`).join('');
+    }
+
+    async function startRun() {
+      const body = {
+        config: document.getElementById('configSelect').value,
+        wordlist: document.getElementById('wordlistSelect').value,
+        max_bots: parseInt(document.getElementById('maxBots').value) || 10,
+        proxy_file: document.getElementById('proxyFile').value,
+      };
+      const res = await fetch('/api/run', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      const data = await res.json();
+      if (data.error) alert(data.error);
+      else document.getElementById('runStatus').textContent = 'Running...';
+      document.getElementById('runStatus').className = 'status-running';
+    }
+
+    async function stopRun() {
+      await fetch('/api/stop', { method: 'POST' });
+      document.getElementById('runStatus').textContent = 'Stopped';
+      document.getElementById('runStatus').className = 'status-idle';
+    }
+
+    async function testSingle() {
+      const body = {
+        config: document.getElementById('configSelect').value,
+        email: document.getElementById('testEmail').value,
+        password: document.getElementById('testPass').value,
+      };
+      const res = await fetch('/api/test-single', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      const data = await res.json();
+      document.getElementById('testResult').textContent = JSON.stringify(data, null, 2);
+    }
+
+    async function pollStats() {
+      const stats = await fetch('/api/stats').then(r => r.json());
+      document.getElementById('sTotal').textContent = stats.total || 0;
+      document.getElementById('sChecked').textContent = stats.checked || 0;
+      document.getElementById('sHits').textContent = stats.hits || 0;
+      document.getElementById('sFails').textContent = stats.fails || 0;
+      document.getElementById('sCPM').textContent = stats.cpm || 0;
+      document.getElementById('sRetry').textContent = stats.retries || 0;
+      document.getElementById('sError').textContent = stats.errors || 0;
+
+      if (stats.running) {
+        document.getElementById('runStatus').textContent = 'Running...';
+        document.getElementById('runStatus').className = 'status-running';
+      } else if (stats.checked > 0) {
+        document.getElementById('runStatus').textContent = 'Done';
+        document.getElementById('runStatus').className = 'status-idle';
+      }
+
+      const hits = await fetch('/api/hits').then(r => r.json());
+      const rows = [...(hits.live || []), ...(hits.saved || []).map(h => ({
+        email: h.email, password: h.password, capture: h.capture, status: 'HIT'
+      }))];
+      document.getElementById('hitsBody').innerHTML = rows.slice(0, 50).map(r =>
+        `<tr><td>${r.email}</td><td>${r.password}</td><td>${JSON.stringify(r.capture||{})}</td><td class="hit">${r.status}</td></tr>`
+      ).join('');
+    }
+
+    loadOptions();
+    setInterval(pollStats, 1000);
+  </script>
+</body>
+</html>

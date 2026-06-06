@@ -1,0 +1,7 @@
+# Demo wordlist - local testing only
+test@demo.com:password123
+admin@demo.com:admin123
+user@storyblocks.demo:demo2024
+wrong@demo.com:badpassword
+fake@demo.com:123456
+test@demo.com:wrongpass

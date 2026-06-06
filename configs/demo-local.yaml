@@ -1,0 +1,39 @@
+name: "Demo Local Login"
+type: http
+wordlist_format: "email:pass"
+
+cloudflare:
+  enabled: false
+
+proxy: false
+timeout: 10
+
+request:
+  method: POST
+  url: "http://localhost:3000/api/auth/login"
+  headers:
+    Content-Type: "application/json"
+    Accept: "application/json"
+  body: |
+    {"email":"{{email}}","password":"{{password}}"}
+
+success:
+  - type: json_path
+    path: "access_token"
+    condition: exists
+  - type: body_contains
+    value: '"success":true'
+
+fail:
+  - type: body_contains
+    value: "invalid credentials"
+  - type: status_code
+    value: "401"
+
+capture:
+  - type: json_path
+    path: "plan"
+    save_as: "plan"
+  - type: json_path
+    path: "access_token"
+    save_as: "token"

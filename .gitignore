@@ -1,0 +1,18 @@
+# Binaries
+/checker
+/bin/
+demo-server/demo-server
+
+# Runtime data
+results/
+*.db
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Env secrets (proxies, API keys)
+.env
+*.key

