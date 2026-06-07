@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"authchecker/internal/browser"
 	"authchecker/internal/captcha"
 	"authchecker/internal/cf"
 	"authchecker/internal/config"
@@ -55,6 +56,14 @@ func (b *Bot) Check(ctx context.Context, input CheckInput) CheckResult {
 		Password: input.Password,
 		Status:   "ERROR",
 		LineNum:  input.LineNum,
+	}
+
+	if strings.ToLower(b.cfg.Type) == "browser" {
+		br := browser.Check(ctx, input.Email, input.Password, browser.FromYAML(b.cfg), b.cfg.Success, b.cfg.Fail)
+		result.Status = br.Status
+		result.Detail = br.Detail
+		result.Capture = br.Capture
+		return result
 	}
 
 	client, userAgent, err := b.newClient(input.ProxyURL)

