@@ -40,7 +40,7 @@
     }
     .card h2 { font-size: 13px; color: #71717a; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 16px; }
     label { display: block; font-size: 13px; color: #a1a1aa; margin-bottom: 6px; }
-    select, input {
+    select, input, textarea {
       width: 100%;
       background: #0f1117;
       border: 1px solid #2a2d3a;
@@ -49,7 +49,16 @@
       border-radius: 6px;
       font-size: 14px;
       margin-bottom: 12px;
+      font-family: inherit;
     }
+    textarea.token-box {
+      min-height: 80px;
+      max-height: 160px;
+      font-size: 11px;
+      word-break: break-all;
+      resize: vertical;
+    }
+    .token-hint { font-size: 11px; color: #71717a; margin: -8px 0 12px; }
     .btn-row { display: flex; gap: 8px; margin-top: 4px; }
     button {
       flex: 1;
@@ -130,8 +139,9 @@
         <input id="testEmail" type="text" placeholder="test@demo.com">
         <label>Password</label>
         <input id="testPass" type="text" placeholder="password123">
-        <label>reCAPTCHA Token (free — DevTools se paste)</label>
-        <input id="testCaptcha" type="text" placeholder="optional — Network tab se recaptchaToken copy karo">
+        <label>reCAPTCHA Token (Ctrl+V — lamba token yahan paste karo)</label>
+        <textarea id="testCaptcha" class="token-box" placeholder="Sirf recaptchaToken ki value paste karo (2000+ chars)"></textarea>
+        <div class="token-hint" id="tokenLen">0 characters</div>
         <button class="btn-test" onclick="testSingle()">Test One</button>
         <pre id="testResult" style="margin-top:12px;font-size:12px;color:#a1a1aa;white-space:pre-wrap;"></pre>
       </div>
@@ -191,12 +201,32 @@
       document.getElementById('runStatus').className = 'status-idle';
     }
 
+    function cleanToken(raw) {
+      let t = (raw || '').trim();
+      // agar poora JSON paste ho gaya ho
+      const m = t.match(/"recaptchaToken"\s*:\s*"([^"]+)"/);
+      if (m) t = m[1];
+      // quotes hatao
+      if (t.startsWith('"') && t.endsWith('"')) t = t.slice(1, -1);
+      return t.trim();
+    }
+
+    document.getElementById('testCaptcha').addEventListener('input', function() {
+      const len = cleanToken(this.value).length;
+      document.getElementById('tokenLen').textContent = len + ' characters' + (len > 100 ? ' ✓' : ' (token bahut chhota lag raha hai)');
+    });
+
     async function testSingle() {
+      const token = cleanToken(document.getElementById('testCaptcha').value);
+      if (!token) {
+        alert('reCAPTCHA token paste karo — textarea mein Ctrl+V');
+        return;
+      }
       const body = {
         config: document.getElementById('configSelect').value,
         email: document.getElementById('testEmail').value,
         password: document.getElementById('testPass').value,
-        recaptcha_token: document.getElementById('testCaptcha').value,
+        recaptcha_token: token,
       };
       const res = await fetch('/api/test-single', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
       const data = await res.json();
