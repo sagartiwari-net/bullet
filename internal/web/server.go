@@ -192,12 +192,12 @@ func (s *Server) ListenAndServe() error {
 }
 
 func (s *Server) handleConfigs(w http.ResponseWriter, r *http.Request) {
-	names, err := config.ListConfigs(s.configsDir)
+	meta, err := config.ListConfigMeta(s.configsDir)
 	if err != nil {
 		jsonError(w, err.Error(), 500)
 		return
 	}
-	jsonOK(w, names)
+	jsonOK(w, meta)
 }
 
 func (s *Server) handleWordlists(w http.ResponseWriter, r *http.Request) {

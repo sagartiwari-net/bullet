@@ -137,21 +137,46 @@ func Load(path string) (*Config, error) {
 }
 
 func ListConfigs(dir string) ([]string, error) {
+	meta, err := ListConfigMeta(dir)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, len(meta))
+	for i, m := range meta {
+		names[i] = m.File
+	}
+	return names, nil
+}
+
+type ConfigMeta struct {
+	File string `json:"file"`
+	Type string `json:"type"`
+	Name string `json:"name"`
+}
+
+func ListConfigMeta(dir string) ([]ConfigMeta, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
 
-	var names []string
+	var out []ConfigMeta
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
 		}
-		if strings.HasSuffix(e.Name(), ".yaml") || strings.HasSuffix(e.Name(), ".yml") {
-			names = append(names, e.Name())
+		if !strings.HasSuffix(e.Name(), ".yaml") && !strings.HasSuffix(e.Name(), ".yml") {
+			continue
 		}
+		path := filepath.Join(dir, e.Name())
+		cfg, err := Load(path)
+		if err != nil {
+			out = append(out, ConfigMeta{File: e.Name(), Type: "http", Name: e.Name()})
+			continue
+		}
+		out = append(out, ConfigMeta{File: e.Name(), Type: cfg.Type, Name: cfg.Name})
 	}
-	return names, nil
+	return out, nil
 }
 
 func ConfigPath(dir, name string) string {

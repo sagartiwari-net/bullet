@@ -120,7 +120,7 @@
       <div class="card">
         <h2>Run Job</h2>
         <label>Config</label>
-        <select id="configSelect"></select>
+        <select id="configSelect" onchange="onConfigChange()"></select>
         <label>Wordlist</label>
         <select id="wordlistSelect"></select>
         <label>Max Bots (parallel)</label>
@@ -139,25 +139,30 @@
         <input id="testEmail" type="text" placeholder="test@demo.com">
         <label>Password</label>
         <input id="testPass" type="text" placeholder="password123">
-        <label>reCAPTCHA Token (auto ya manual paste)</label>
-        <textarea id="testCaptcha" class="token-box" placeholder="Token yahan aayega — ya browser hook se auto-fill"></textarea>
-        <div class="token-hint"><span id="tokenCharCount">0 characters</span> — <span id="tokenAuto" style="color:#71717a">waiting for hook</span></div>
-        <label>Cookies (optional — DevTools → Network → login → Request Headers → cookie:)</label>
-        <textarea id="testCookies" class="token-box" style="min-height:50px;max-height:80px" placeholder="session=abc; __cf_bm=xyz (hook se bhi auto aayega)"></textarea>
-        <details style="margin-bottom:12px;font-size:12px;color:#93c5fd;">
-          <summary style="cursor:pointer">Auto Token — BLOCK mode (fresh token)</summary>
-          <ol style="margin:8px 0 0 16px;line-height:1.6;">
-            <li>Login page → F12 → Console</li>
-            <li><code style="color:#fbbf24">fetch('http://localhost:8080/token-hook.js').then(r=>r.text()).then(eval)</code></li>
-            <li>Login submit → browser fail dikhega (OK!) → token clipboard mein copy</li>
-            <li>Dashboard → <b>Read Clipboard</b> ya Ctrl+V → <b>Test One</b> (5 sec ke andar)</li>
-            <li>Note: HTTPS site se auto-fill nahi hota — clipboard use karo</li>
-            <li>403 aaye to Cookie header paste karo upar wale box mein</li>
-          </ol>
-        </details>
+        <div id="browserModeHint" class="note" style="display:none;margin-bottom:12px;">
+          <b>Browser mode</b> — Chrome khulega, reCAPTCHA automatic solve hoga. Token / cookies ki zaroorat nahi. (15–30 sec lag sakta hai)
+        </div>
+        <div id="httpCaptchaBlock">
+          <label>reCAPTCHA Token (auto ya manual paste)</label>
+          <textarea id="testCaptcha" class="token-box" placeholder="Token yahan aayega — ya browser hook se auto-fill"></textarea>
+          <div class="token-hint"><span id="tokenCharCount">0 characters</span> — <span id="tokenAuto" style="color:#71717a">waiting for hook</span></div>
+          <label>Cookies (optional — DevTools → Network → login → Request Headers → cookie:)</label>
+          <textarea id="testCookies" class="token-box" style="min-height:50px;max-height:80px" placeholder="session=abc; __cf_bm=xyz (hook se bhi auto aayega)"></textarea>
+          <details style="margin-bottom:12px;font-size:12px;color:#93c5fd;">
+            <summary style="cursor:pointer">Auto Token — BLOCK mode (fresh token)</summary>
+            <ol style="margin:8px 0 0 16px;line-height:1.6;">
+              <li>Login page → F12 → Console</li>
+              <li><code style="color:#fbbf24">fetch('http://localhost:8080/token-hook.js').then(r=>r.text()).then(eval)</code></li>
+              <li>Login submit → browser fail dikhega (OK!) → token clipboard mein copy</li>
+              <li>Dashboard → <b>Read Clipboard</b> ya Ctrl+V → <b>Test One</b> (5 sec ke andar)</li>
+              <li>Note: HTTPS site se auto-fill nahi hota — clipboard use karo</li>
+              <li>403 aaye to Cookie header paste karo upar wale box mein</li>
+            </ol>
+          </details>
+        </div>
         <div class="btn-row">
-          <button class="btn-test" onclick="readClipboard()" style="background:#6366f1;color:#fff">📋 Read Clipboard</button>
-          <button class="btn-test" onclick="testSingle()">Test One</button>
+          <button id="btnClipboard" class="btn-test" onclick="readClipboard()" style="background:#6366f1;color:#fff">📋 Read Clipboard</button>
+          <button id="btnTestOne" class="btn-test" onclick="testSingle()">Test One</button>
         </div>
         <pre id="testResult" style="margin-top:12px;font-size:12px;color:#a1a1aa;white-space:pre-wrap;"></pre>
       </div>
@@ -186,6 +191,20 @@
   </div>
 
   <script>
+    let configMeta = {};
+
+    function isBrowserConfig(file) {
+      return (configMeta[file] || '').toLowerCase() === 'browser';
+    }
+
+    function onConfigChange() {
+      const file = document.getElementById('configSelect').value;
+      const browser = isBrowserConfig(file);
+      document.getElementById('httpCaptchaBlock').style.display = browser ? 'none' : 'block';
+      document.getElementById('browserModeHint').style.display = browser ? 'block' : 'none';
+      document.getElementById('btnClipboard').style.display = browser ? 'none' : 'flex';
+    }
+
     async function loadOptions() {
       const [configs, wordlists] = await Promise.all([
         fetch('/api/configs').then(r => r.json()),
@@ -193,8 +212,16 @@
       ]);
       const cs = document.getElementById('configSelect');
       const ws = document.getElementById('wordlistSelect');
-      cs.innerHTML = configs.map(c => `<option value="${c}">${c}</option>`).join('');
+      configMeta = {};
+      cs.innerHTML = configs.map(c => {
+        const file = c.file || c;
+        const type = c.type || 'http';
+        const label = c.name && c.name !== file ? `${file} (${type})` : `${file} [${type}]`;
+        configMeta[file] = type;
+        return `<option value="${file}">${label}</option>`;
+      }).join('');
       ws.innerHTML = wordlists.map(w => `<option value="${w}">${w}</option>`).join('');
+      onConfigChange();
     }
 
     async function startRun() {
@@ -266,21 +293,33 @@
     }
 
     async function testSingle() {
+      const configFile = document.getElementById('configSelect').value;
+      const browser = isBrowserConfig(configFile);
       const token = cleanToken(document.getElementById('testCaptcha').value);
-      if (!token) {
+      if (!browser && !token) {
         alert('reCAPTCHA token paste karo — textarea mein Ctrl+V');
         return;
       }
+      const btn = document.getElementById('btnTestOne');
+      const resultEl = document.getElementById('testResult');
+      btn.disabled = true;
+      resultEl.textContent = browser ? 'Chrome chal raha hai... 15-30 sec wait karo' : 'Checking...';
       const body = {
-        config: document.getElementById('configSelect').value,
+        config: configFile,
         email: document.getElementById('testEmail').value,
         password: document.getElementById('testPass').value,
-        recaptcha_token: token,
-        cookies: document.getElementById('testCookies').value.trim(),
+        recaptcha_token: browser ? '' : token,
+        cookies: browser ? '' : document.getElementById('testCookies').value.trim(),
       };
-      const res = await fetch('/api/test-single', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
-      const data = await res.json();
-      document.getElementById('testResult').textContent = JSON.stringify(data, null, 2);
+      try {
+        const res = await fetch('/api/test-single', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+        const data = await res.json();
+        resultEl.textContent = JSON.stringify(data, null, 2);
+      } catch (e) {
+        resultEl.textContent = 'Request failed: ' + e.message;
+      } finally {
+        btn.disabled = false;
+      }
     }
 
     async function pollStats() {
