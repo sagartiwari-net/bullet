@@ -2,13 +2,13 @@ package browser
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"
+	"github.com/go-rod/stealth"
 
 	"authchecker/internal/config"
 )
@@ -28,6 +28,7 @@ type LoginConfig struct {
 	CheckboxSelector  string
 	PreClickSelectors []string
 	SubmitSelector    string
+	LoginAPIPath      string
 	ChromePath        string
 	WaitAfterLoad     int
 	WaitAfterSubmit   int
@@ -69,6 +70,7 @@ func FromYAML(cfg *config.Config) LoginConfig {
 		CheckboxSelector:  b.CheckboxSelector,
 		PreClickSelectors: preClick,
 		SubmitSelector:    b.SubmitSelector,
+		LoginAPIPath:      b.LoginAPIPath,
 		ChromePath:        b.ChromePath,
 		WaitAfterLoad:     b.WaitAfterLoad,
 		WaitAfterSubmit:   b.WaitAfterSubmit,
@@ -161,9 +163,10 @@ func Check(ctx context.Context, email, password string, cfg LoginConfig, rulesSu
 		clearAllStorage(session, nil, origin)
 	}
 
-	page, err := session.Page(proto.TargetCreateTarget{URL: "about:blank"})
+	page, err := stealth.Page(session)
 	if err != nil {
-		out.Detail = err.Error()
+		out.Status = "RETRY"
+		out.Detail = "stealth page: " + err.Error()
 		return out
 	}
 	defer func() {
@@ -173,13 +176,17 @@ func Check(ctx context.Context, email, password string, cfg LoginConfig, rulesSu
 		page.Close()
 	}()
 
+	page.EnableDomain(&proto.NetworkEnable{})
+
+	apiPath := cfg.LoginAPIPath
+	if apiPath == "" {
+		apiPath = "/api/login"
+	}
+	apiWatch := watchLoginAPI(page, apiPath)
+
 	if err := page.Navigate(cfg.LoginURL); err != nil {
 		out.Detail = "navigate login: " + err.Error()
 		return out
-	}
-	if cfg.ClearStorage {
-		clearAllStorage(session, page, origin)
-		_ = page.Reload()
 	}
 
 	page.MustWaitLoad()
@@ -190,14 +197,20 @@ func Check(ctx context.Context, email, password string, cfg LoginConfig, rulesSu
 		out.Detail = "email field not found: " + err.Error()
 		return out
 	}
-	emailEl.MustSelectAllText().MustInput(email)
+	if err := fillInputField(page, emailEl, email); err != nil {
+		out.Detail = "email fill: " + err.Error()
+		return out
+	}
 
 	passEl, err := page.Element(cfg.PassSelector)
 	if err != nil {
 		out.Detail = "password field not found: " + err.Error()
 		return out
 	}
-	passEl.MustSelectAllText().MustInput(password)
+	if err := fillInputField(page, passEl, password); err != nil {
+		out.Detail = "password fill: " + err.Error()
+		return out
+	}
 
 	for _, sel := range cfg.PreClickSelectors {
 		if err := clickPreAction(page, sel); err != nil {
@@ -206,8 +219,8 @@ func Check(ctx context.Context, email, password string, cfg LoginConfig, rulesSu
 		}
 	}
 
-	// reCAPTCHA v3 invisible — browser mein auto-solve hone do
-	time.Sleep(2 * time.Second)
+	// reCAPTCHA v3 — page par user activity ke baad score generate hota hai
+	time.Sleep(4 * time.Second)
 
 	submitSel := cfg.SubmitSelector
 	if submitSel == "" {
@@ -218,9 +231,11 @@ func Check(ctx context.Context, email, password string, cfg LoginConfig, rulesSu
 		out.Detail = "submit button not found: " + err.Error()
 		return out
 	}
-	submit.MustClick()
+	_ = submit.WaitEnabled()
+	submit.MustScrollIntoView().MustClick()
 
-	time.Sleep(time.Duration(cfg.WaitAfterSubmit) * time.Second)
+	apiWatch.Wait(time.Duration(cfg.WaitAfterSubmit) * time.Second)
+	time.Sleep(2 * time.Second)
 
 	info, _ := page.Info()
 	currentURL := ""
@@ -228,9 +243,33 @@ func Check(ctx context.Context, email, password string, cfg LoginConfig, rulesSu
 		currentURL = info.URL
 	}
 	html, _ := page.HTML()
+	reqBody, apiBody := apiWatch.Snapshot()
 	out.Source = html
+	if apiBody != "" {
+		out.Source = apiBody + "\n---\n" + html
+	}
+	if reqBody != "" {
+		out.Capture["api_request"] = truncate(reqBody, 300)
+	}
+	if apiBody != "" {
+		out.Capture["api_response"] = truncate(apiBody, 500)
+		if st, detail, ok := evaluateLoginAPI(apiBody); ok {
+			out.Status = st
+			out.Detail = detail
+			if st == "HIT" {
+				out.Capture["url"] = currentURL
+				if cfg.CheckSubscribe && cfg.SubscribeText != "" {
+					if strings.Contains(html, cfg.SubscribeText) {
+						out.Capture["subscription"] = "active"
+					} else {
+						out.Capture["subscription"] = "none"
+					}
+				}
+			}
+			return out
+		}
+	}
 
-	// API response capture via network — check page for fail/success text
 	combined := html + "\n" + currentURL
 
 	if msg := matchFailPage(combined, cfg); msg != "" {
@@ -286,26 +325,6 @@ func matchFailPage(combined string, cfg LoginConfig) string {
 		}
 	}
 	return ""
-}
-
-func clickPreAction(page *rod.Page, selector string) error {
-	el, err := page.Timeout(8 * time.Second).Element(selector)
-	if err != nil {
-		return fmt.Errorf("pre-click not found (%s): %w", selector, err)
-	}
-
-	// Hidden/native checkbox — label ya wrapper click
-	tagName := strings.ToLower(el.MustEval(`() => this.tagName`).String())
-	if tagName == "input" {
-		inputType := strings.ToLower(el.MustEval(`() => this.type || ""`).String())
-		if inputType == "checkbox" && el.MustEval(`() => this.checked`).Bool() {
-			return nil
-		}
-	}
-
-	el.MustScrollIntoView().MustClick()
-	time.Sleep(300 * time.Millisecond)
-	return nil
 }
 
 func evaluateRules(rules []config.Rule, source string, statusCode int, isSuccess bool) string {

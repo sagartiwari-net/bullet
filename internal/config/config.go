@@ -48,6 +48,7 @@ type BrowserConfig struct {
 	CheckboxSelector  string   `yaml:"checkbox_selector"`
 	PreClickSelectors []string `yaml:"pre_click_selectors"`
 	SubmitSelector    string   `yaml:"submit_selector"`
+	LoginAPIPath      string   `yaml:"login_api_path"`
 	ChromePath        string   `yaml:"chrome_path"`
 	WaitAfterLoad     int      `yaml:"wait_after_load"`
 	WaitAfterSubmit   int      `yaml:"wait_after_submit"`
