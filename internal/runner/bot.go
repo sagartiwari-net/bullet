@@ -22,6 +22,7 @@ type CheckInput struct {
 	Password        string
 	ProxyURL        string
 	RecaptchaToken  string
+	CustomCookies   string
 	LineNum         int
 }
 
@@ -107,6 +108,10 @@ func (b *Bot) Check(ctx context.Context, input CheckInput) CheckResult {
 		return result
 	}
 
+	if input.CustomCookies != "" {
+		b.seedCookieString(client, b.cfg.Request.URL, input.CustomCookies)
+	}
+
 	body := applyVars(b.cfg.Request.Body, input, userAgent, recaptchaToken)
 	statusCode, source, err := b.doRequest(ctx, client, b.cfg.Request.Method, b.cfg.Request.URL, b.cfg.Request.Headers, body, userAgent)
 	if err != nil {
@@ -115,10 +120,15 @@ func (b *Bot) Check(ctx context.Context, input CheckInput) CheckResult {
 		return result
 	}
 
-	if statusCode == 403 && b.cfg.Cloudflare.Enabled && b.cfManager != nil {
-		b.cfManager.Invalidate(extractBaseURL(b.cfg.Request.URL), input.ProxyURL)
-		result.Status = "RETRY"
-		result.Detail = "403 - cf cookie expired"
+	if statusCode == 403 {
+		if b.cfg.Cloudflare.Enabled && b.cfManager != nil {
+			b.cfManager.Invalidate(extractBaseURL(b.cfg.Request.URL), input.ProxyURL)
+			result.Status = "RETRY"
+			result.Detail = "403 - cf cookie expired"
+			return result
+		}
+		result.Status = "ERROR"
+		result.Detail = "403 forbidden — token already used OR missing cookies. Use hook block mode + paste Cookie header from DevTools"
 		return result
 	}
 
@@ -214,6 +224,21 @@ func (b *Bot) newClient(proxyURL string) (*http.Client, string, error) {
 		CheckRedirect: func(req *http.Request, via []*http.Request) error { return nil },
 	}
 	return client, userAgent, nil
+}
+
+func (b *Bot) seedCookieString(client *http.Client, rawURL, cookieStr string) {
+	u, err := url.Parse(rawURL)
+	if err != nil || client.Jar == nil {
+		return
+	}
+	for _, part := range strings.Split(cookieStr, ";") {
+		part = strings.TrimSpace(part)
+		idx := strings.Index(part, "=")
+		if idx <= 0 {
+			continue
+		}
+		client.Jar.SetCookies(u, []*http.Cookie{{Name: part[:idx], Value: part[idx+1:]}})
+	}
 }
 
 func (b *Bot) seedCookies(client *http.Client, rawURL string, cookies map[string]string) {

