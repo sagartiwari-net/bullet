@@ -2,6 +2,7 @@ package browser
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,6 +31,11 @@ type LoginConfig struct {
 	SubmitSelector    string
 	LoginAPIPath      string
 	ChromePath        string
+	WarmupURL         string
+	RecaptchaSiteKey  string
+	RecaptchaAction   string
+	RecaptchaWait     int
+	MaxRetries        int
 	WaitAfterLoad     int
 	WaitAfterSubmit   int
 	KeepOpenSeconds   int
@@ -52,6 +58,12 @@ func FromYAML(cfg *config.Config) LoginConfig {
 	if b.WaitAfterSubmit <= 0 {
 		b.WaitAfterSubmit = 5
 	}
+	if b.RecaptchaWait <= 0 {
+		b.RecaptchaWait = 8
+	}
+	if b.MaxRetries <= 0 {
+		b.MaxRetries = 2
+	}
 	preClick := b.PreClickSelectors
 	if b.CheckboxSelector != "" {
 		preClick = append([]string{b.CheckboxSelector}, preClick...)
@@ -60,6 +72,13 @@ func FromYAML(cfg *config.Config) LoginConfig {
 	clearStorage := true
 	if b.ClearStorage != nil {
 		clearStorage = *b.ClearStorage
+	}
+
+	warmup := b.WarmupURL
+	if warmup == "" && b.LoginURL != "" {
+		if o := siteOrigin(b.LoginURL, b.SiteOrigin); o != "" {
+			warmup = o + "/"
+		}
 	}
 
 	return LoginConfig{
@@ -72,6 +91,11 @@ func FromYAML(cfg *config.Config) LoginConfig {
 		SubmitSelector:    b.SubmitSelector,
 		LoginAPIPath:      b.LoginAPIPath,
 		ChromePath:        b.ChromePath,
+		WarmupURL:         warmup,
+		RecaptchaSiteKey:  b.RecaptchaSiteKey,
+		RecaptchaAction:   b.RecaptchaAction,
+		RecaptchaWait:     b.RecaptchaWait,
+		MaxRetries:        b.MaxRetries,
 		WaitAfterLoad:     b.WaitAfterLoad,
 		WaitAfterSubmit:   b.WaitAfterSubmit,
 		KeepOpenSeconds:   b.KeepOpenSeconds,
@@ -89,7 +113,7 @@ func FromYAML(cfg *config.Config) LoginConfig {
 
 func buildLauncher(cfg LoginConfig) *launcher.Launcher {
 	l := launcher.New().
-		Leakless(false). // Windows Defender blocks leakless.exe on RDP
+		Leakless(false).
 		Headless(cfg.Headless).
 		Set("disable-blink-features", "AutomationControlled").
 		Set("window-size", "1280,900")
@@ -113,26 +137,40 @@ func buildLauncher(cfg LoginConfig) *launcher.Launcher {
 }
 
 func Check(ctx context.Context, email, password string, cfg LoginConfig, rulesSuccess, rulesFail []config.Rule) Result {
-	out := Result{Status: "ERROR", Capture: map[string]string{}}
-
 	if cfg.LoginURL == "" || cfg.EmailSelector == "" || cfg.PassSelector == "" {
-		out.Detail = "browser config incomplete: login_url, email_selector, pass_selector required"
-		return out
+		return Result{Status: "ERROR", Detail: "browser config incomplete: login_url, email_selector, pass_selector required"}
+	}
+
+	var last Result
+	for attempt := 1; attempt <= cfg.MaxRetries; attempt++ {
+		last = runLoginAttempt(ctx, email, password, cfg, rulesSuccess, rulesFail, attempt)
+		if last.Status != "RETRY" || !isRecaptchaError(last) {
+			return last
+		}
+		time.Sleep(time.Duration(attempt*3) * time.Second)
+	}
+	return last
+}
+
+func isRecaptchaError(r Result) bool {
+	combined := strings.ToLower(r.Detail + r.Source)
+	if resp, ok := r.Capture["api_response"]; ok {
+		combined += strings.ToLower(resp)
+	}
+	return strings.Contains(combined, "recaptcha") || strings.Contains(combined, "captcha")
+}
+
+func runLoginAttempt(ctx context.Context, email, password string, cfg LoginConfig, rulesSuccess, rulesFail []config.Rule, attempt int) Result {
+	out := Result{Status: "ERROR", Capture: map[string]string{}}
+	if attempt > 1 {
+		out.Capture["attempt"] = strconv.Itoa(attempt)
 	}
 
 	l := buildLauncher(cfg)
-
 	controlURL, err := l.Launch()
 	if err != nil {
 		out.Status = "RETRY"
-		detail := "chrome launch failed: " + err.Error()
-		if strings.Contains(strings.ToLower(err.Error()), "virus") ||
-			strings.Contains(strings.ToLower(err.Error()), "leakless") {
-			detail += " — Windows Defender ne block kiya; update pull karo (leakless off fix)"
-		} else {
-			detail += " — Google Chrome install karo ya browser.chrome_path set karo"
-		}
-		out.Detail = detail
+		out.Detail = "chrome launch failed: " + err.Error()
 		return out
 	}
 	defer l.Cleanup()
@@ -151,19 +189,8 @@ func Check(ctx context.Context, email, password string, cfg LoginConfig, rulesSu
 
 	origin := siteOrigin(cfg.LoginURL, cfg.SiteOrigin)
 
-	session, err := browser.Incognito()
-	if err != nil {
-		out.Status = "RETRY"
-		out.Detail = "incognito session: " + err.Error()
-		return out
-	}
-	defer session.MustClose()
-
-	if cfg.ClearStorage {
-		clearAllStorage(session, nil, origin)
-	}
-
-	page, err := stealth.Page(session)
+	// Fresh profile use karo — incognito mat (reCAPTCHA score kharab hota hai)
+	page, err := stealth.Page(browser)
 	if err != nil {
 		out.Status = "RETRY"
 		out.Detail = "stealth page: " + err.Error()
@@ -171,7 +198,7 @@ func Check(ctx context.Context, email, password string, cfg LoginConfig, rulesSu
 	}
 	defer func() {
 		if cfg.ClearStorage {
-			clearAllStorage(session, page, origin)
+			clearOriginStorage(browser, page, origin)
 		}
 		page.Close()
 	}()
@@ -184,12 +211,21 @@ func Check(ctx context.Context, email, password string, cfg LoginConfig, rulesSu
 	}
 	apiWatch := watchLoginAPI(page, apiPath)
 
+	// Warmup — pehle homepage, phir login (natural flow)
+	if cfg.WarmupURL != "" && cfg.WarmupURL != cfg.LoginURL {
+		_ = page.Navigate(cfg.WarmupURL)
+		page.MustWaitLoad()
+		dismissCookieBanner(page)
+		simulateHuman(page)
+		time.Sleep(2 * time.Second)
+	}
+
 	if err := page.Navigate(cfg.LoginURL); err != nil {
 		out.Detail = "navigate login: " + err.Error()
 		return out
 	}
-
 	page.MustWaitLoad()
+	dismissCookieBanner(page)
 	time.Sleep(time.Duration(cfg.WaitAfterLoad) * time.Second)
 
 	emailEl, err := page.Element(cfg.EmailSelector)
@@ -201,6 +237,8 @@ func Check(ctx context.Context, email, password string, cfg LoginConfig, rulesSu
 		out.Detail = "email fill: " + err.Error()
 		return out
 	}
+	time.Sleep(800 * time.Millisecond)
+	simulateHuman(page)
 
 	passEl, err := page.Element(cfg.PassSelector)
 	if err != nil {
@@ -211,6 +249,7 @@ func Check(ctx context.Context, email, password string, cfg LoginConfig, rulesSu
 		out.Detail = "password fill: " + err.Error()
 		return out
 	}
+	time.Sleep(600 * time.Millisecond)
 
 	for _, sel := range cfg.PreClickSelectors {
 		if err := clickPreAction(page, sel); err != nil {
@@ -219,8 +258,11 @@ func Check(ctx context.Context, email, password string, cfg LoginConfig, rulesSu
 		}
 	}
 
-	// reCAPTCHA v3 — page par user activity ke baad score generate hota hai
-	time.Sleep(4 * time.Second)
+	if err := waitRecaptchaReady(page, cfg.RecaptchaSiteKey, cfg.RecaptchaAction, cfg.RecaptchaWait); err != nil {
+		out.Status = "RETRY"
+		out.Detail = "recaptcha wait: " + err.Error()
+		return out
+	}
 
 	submitSel := cfg.SubmitSelector
 	if submitSel == "" {
@@ -271,7 +313,6 @@ func Check(ctx context.Context, email, password string, cfg LoginConfig, rulesSu
 	}
 
 	combined := html + "\n" + currentURL
-
 	if msg := matchFailPage(combined, cfg); msg != "" {
 		out.Status = "FAIL"
 		out.Detail = msg

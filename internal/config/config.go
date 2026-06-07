@@ -53,6 +53,11 @@ type BrowserConfig struct {
 	WaitAfterLoad     int      `yaml:"wait_after_load"`
 	WaitAfterSubmit   int      `yaml:"wait_after_submit"`
 	KeepOpenSeconds   int      `yaml:"keep_open_seconds"`
+	WarmupURL         string   `yaml:"warmup_url"`
+	RecaptchaSiteKey  string   `yaml:"recaptcha_sitekey"`
+	RecaptchaAction   string   `yaml:"recaptcha_action"`
+	RecaptchaWait     int      `yaml:"recaptcha_wait"`
+	MaxRetries        int      `yaml:"max_retries"`
 	ClearStorage      *bool    `yaml:"clear_storage"`
 	Headless          bool     `yaml:"headless"`
 	Devtools          bool     `yaml:"devtools"`

@@ -87,7 +87,7 @@ func evaluateLoginAPI(body string) (status, detail string, ok bool) {
 		return "FAIL", "api: credentialsInvalid (agar manual login pass ho to reCAPTCHA/bot block ho sakta hai)", true
 	}
 	if strings.Contains(strings.ToLower(body), "captcha") || strings.Contains(strings.ToLower(body), "recaptcha") {
-		return "RETRY", "api: recaptcha blocked — thoda wait karke dubara try karo", true
+		return "RETRY", "api: Recaptcha invalid — Google cookies preserve + auto retry (2x)", true
 	}
 	if strings.Contains(body, `"success":false`) || strings.Contains(body, `"success": false`) {
 		return "FAIL", "api login failed: " + truncate(body, 200), true

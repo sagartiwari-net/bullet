@@ -32,9 +32,9 @@ func withFreshProfile(l *launcher.Launcher) *launcher.Launcher {
 	return l.UserDataDir(freshUserDataDir())
 }
 
-func clearAllStorage(client proto.Client, page *rod.Page, origin string) {
-	_ = proto.NetworkClearBrowserCookies{}.Call(client)
-	_ = proto.StorageClearCookies{}.Call(client)
+// clearOriginStorage — sirf target site (Storyblocks) ka data clear.
+// Google reCAPTCHA cookies NAHI hatate — warna "Recaptcha invalid" aata hai.
+func clearOriginStorage(client proto.Client, page *rod.Page, origin string) {
 	if origin != "" {
 		_ = proto.StorageClearDataForOrigin{
 			Origin:       origin,

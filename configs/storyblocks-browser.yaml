@@ -20,12 +20,17 @@ browser:
   submit_selector: 'button[type="submit"]'
   login_api_path: "/api/login"
   chrome_path: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+  warmup_url: "https://www.storyblocks.com/"
+  recaptcha_sitekey: "6LcAeIAkAAAAALLGRkRFM4tGcJdfFqUbgPHU56vV"
+  recaptcha_action: "login"
+  recaptcha_wait: 10
+  max_retries: 2
   clear_storage: true
   fail_page_texts:
     - "don't recognize that username or password"
     - "We don't recognize that username or password"
-  wait_after_load: 6
-  wait_after_submit: 12
+  wait_after_load: 8
+  wait_after_submit: 15
   keep_open_seconds: 20
   headless: false
   devtools: false
