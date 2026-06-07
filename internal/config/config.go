@@ -29,6 +29,7 @@ type Config struct {
 
 type CaptchaConfig struct {
 	Enabled  bool    `yaml:"enabled"`
+	Mode     string  `yaml:"mode"` // manual (free) | 2captcha (paid)
 	Provider string  `yaml:"provider"`
 	APIKey   string  `yaml:"api_key"`
 	Type     string  `yaml:"type"`

@@ -18,10 +18,11 @@ import (
 )
 
 type CheckInput struct {
-	Email    string
-	Password string
-	ProxyURL string
-	LineNum  int
+	Email           string
+	Password        string
+	ProxyURL        string
+	RecaptchaToken  string
+	LineNum         int
 }
 
 type CheckResult struct {
@@ -75,8 +76,13 @@ func (b *Bot) Check(ctx context.Context, input CheckInput) CheckResult {
 		b.seedCookies(client, b.cfg.Request.URL, sess.Cookies)
 	}
 
-	recaptchaToken := ""
-	if b.cfg.Captcha.Enabled {
+	recaptchaToken := input.RecaptchaToken
+	mode := strings.ToLower(b.cfg.Captcha.Mode)
+	if mode == "" && b.cfg.Captcha.Enabled {
+		mode = "2captcha"
+	}
+
+	if recaptchaToken == "" && mode == "2captcha" && b.cfg.Captcha.Enabled {
 		token, err := b.captcha.Solve(ctx, captcha.Config{
 			Enabled:  true,
 			Provider: b.cfg.Captcha.Provider,
@@ -93,6 +99,12 @@ func (b *Bot) Check(ctx context.Context, input CheckInput) CheckResult {
 			return result
 		}
 		recaptchaToken = token
+	}
+
+	if strings.Contains(b.cfg.Request.Body, "{{recaptcha_token}}") && recaptchaToken == "" {
+		result.Status = "RETRY"
+		result.Detail = "recaptcha token missing — use Test Single and paste token from DevTools (free manual mode)"
+		return result
 	}
 
 	body := applyVars(b.cfg.Request.Body, input, userAgent, recaptchaToken)

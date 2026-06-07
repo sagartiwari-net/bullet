@@ -130,6 +130,8 @@
         <input id="testEmail" type="text" placeholder="test@demo.com">
         <label>Password</label>
         <input id="testPass" type="text" placeholder="password123">
+        <label>reCAPTCHA Token (free — DevTools se paste)</label>
+        <input id="testCaptcha" type="text" placeholder="optional — Network tab se recaptchaToken copy karo">
         <button class="btn-test" onclick="testSingle()">Test One</button>
         <pre id="testResult" style="margin-top:12px;font-size:12px;color:#a1a1aa;white-space:pre-wrap;"></pre>
       </div>
@@ -194,6 +196,7 @@
         config: document.getElementById('configSelect').value,
         email: document.getElementById('testEmail').value,
         password: document.getElementById('testPass').value,
+        recaptcha_token: document.getElementById('testCaptcha').value,
       };
       const res = await fetch('/api/test-single', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
       const data = await res.json();

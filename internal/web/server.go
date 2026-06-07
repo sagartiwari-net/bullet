@@ -225,10 +225,11 @@ func (s *Server) handleHits(w http.ResponseWriter, r *http.Request) {
 }
 
 type testRequest struct {
-	Config   string `json:"config"`
-	Email    string `json:"email"`
-	Password string `json:"password"`
-	Proxy    string `json:"proxy"`
+	Config          string `json:"config"`
+	Email           string `json:"email"`
+	Password        string `json:"password"`
+	Proxy           string `json:"proxy"`
+	RecaptchaToken  string `json:"recaptcha_token"`
 }
 
 func (s *Server) handleTestSingle(w http.ResponseWriter, r *http.Request) {
@@ -256,9 +257,10 @@ func (s *Server) handleTestSingle(w http.ResponseWriter, r *http.Request) {
 
 	bot := runner.NewBot(cfg, cfMgr)
 	result := bot.Check(context.Background(), runner.CheckInput{
-		Email:    req.Email,
-		Password: req.Password,
-		ProxyURL: req.Proxy,
+		Email:          req.Email,
+		Password:       req.Password,
+		ProxyURL:       req.Proxy,
+		RecaptchaToken: req.RecaptchaToken,
 	})
 
 	jsonOK(w, result)

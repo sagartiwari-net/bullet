@@ -14,10 +14,12 @@ cloudflare:
     enabled: true
     ttl: 25m
 
-# 2Captcha — bulk run ke liye zaroori agar site recaptcha use kare
-# API key: config mein ya environment variable CAPTCHA_API_KEY
+# Captcha modes:
+#   mode: manual   → FREE — Test Single mein DevTools token paste karo (bulk nahi chalega)
+#   mode: 2captcha  → PAID — bulk run ke liye, CAPTCHA_API_KEY env set karo
 captcha:
   enabled: false
+  mode: manual
   provider: 2captcha
   api_key: ""
   type: recaptcha_v3
