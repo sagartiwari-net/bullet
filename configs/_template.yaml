@@ -26,18 +26,25 @@ request:
     Accept: "application/json"
     User-Agent: "{{cf_user_agent}}"
   body: |
-    {"email":"{{email}}","password":"{{password}}"}
+    {
+      "email": "{{email}}",
+      "password": "{{password}}",
+      "agreementCheckbox": true,
+      "recaptchaToken": "PASTE_MANUAL_OR_SOLVER_TOKEN"
+    }
 
+# Tip: dynamic fields (jaise redirectTo) match mat karo — sirf stable text
+# Success example:  "success":true
+# Fail example:     "reason":"credentialsInvalid"  ya  "success":false
 success:
   - type: body_contains
-    value: "CHANGE_SUCCESS_TEXT"   # response mein ye dikhe to HIT
-  - type: json_path
-    path: "access_token"
-    condition: exists
+    value: '"success":true'
 
 fail:
   - type: body_contains
-    value: "CHANGE_FAIL_TEXT"        # response mein ye dikhe to FAIL
+    value: '"reason":"credentialsInvalid"'
+  - type: body_contains
+    value: '"success":false'
   - type: status_code
     value: "401"
 

