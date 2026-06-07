@@ -41,11 +41,13 @@ type CaptchaConfig struct {
 }
 
 type BrowserConfig struct {
-	LoginURL         string `yaml:"login_url"`
-	EmailSelector    string `yaml:"email_selector"`
-	PassSelector     string `yaml:"pass_selector"`
-	SubmitSelector   string `yaml:"submit_selector"`
-	ChromePath       string `yaml:"chrome_path"`
+	LoginURL         string   `yaml:"login_url"`
+	EmailSelector    string   `yaml:"email_selector"`
+	PassSelector     string   `yaml:"pass_selector"`
+	CheckboxSelector string   `yaml:"checkbox_selector"`
+	PreClickSelectors []string `yaml:"pre_click_selectors"`
+	SubmitSelector   string   `yaml:"submit_selector"`
+	ChromePath       string   `yaml:"chrome_path"`
 	WaitAfterLoad    int    `yaml:"wait_after_load"`
 	WaitAfterSubmit  int    `yaml:"wait_after_submit"`
 	KeepOpenSeconds  int    `yaml:"keep_open_seconds"`

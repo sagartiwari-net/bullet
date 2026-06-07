@@ -2,6 +2,7 @@ package browser
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -20,11 +21,13 @@ type Result struct {
 }
 
 type LoginConfig struct {
-	LoginURL        string
-	EmailSelector   string
-	PassSelector    string
-	SubmitSelector  string
-	ChromePath      string
+	LoginURL          string
+	EmailSelector     string
+	PassSelector      string
+	CheckboxSelector  string
+	PreClickSelectors []string
+	SubmitSelector    string
+	ChromePath        string
 	WaitAfterLoad   int
 	WaitAfterSubmit int
 	KeepOpenSeconds int
@@ -45,12 +48,19 @@ func FromYAML(cfg *config.Config) LoginConfig {
 	if b.WaitAfterSubmit <= 0 {
 		b.WaitAfterSubmit = 5
 	}
+	preClick := b.PreClickSelectors
+	if b.CheckboxSelector != "" {
+		preClick = append([]string{b.CheckboxSelector}, preClick...)
+	}
+
 	return LoginConfig{
-		LoginURL:        b.LoginURL,
-		EmailSelector:   b.EmailSelector,
-		PassSelector:    b.PassSelector,
-		SubmitSelector:  b.SubmitSelector,
-		ChromePath:      b.ChromePath,
+		LoginURL:          b.LoginURL,
+		EmailSelector:     b.EmailSelector,
+		PassSelector:      b.PassSelector,
+		CheckboxSelector:  b.CheckboxSelector,
+		PreClickSelectors: preClick,
+		SubmitSelector:    b.SubmitSelector,
+		ChromePath:        b.ChromePath,
 		WaitAfterLoad:   b.WaitAfterLoad,
 		WaitAfterSubmit: b.WaitAfterSubmit,
 		KeepOpenSeconds: b.KeepOpenSeconds,
@@ -147,6 +157,13 @@ func Check(ctx context.Context, email, password string, cfg LoginConfig, rulesSu
 	}
 	passEl.MustSelectAllText().MustInput(password)
 
+	for _, sel := range cfg.PreClickSelectors {
+		if err := clickPreAction(page, sel); err != nil {
+			out.Detail = err.Error()
+			return out
+		}
+	}
+
 	// reCAPTCHA v3 invisible — browser mein auto-solve hone do
 	time.Sleep(2 * time.Second)
 
@@ -204,6 +221,26 @@ func Check(ctx context.Context, email, password string, cfg LoginConfig, rulesSu
 	}
 	out.Capture["url"] = currentURL
 	return out
+}
+
+func clickPreAction(page *rod.Page, selector string) error {
+	el, err := page.Timeout(8 * time.Second).Element(selector)
+	if err != nil {
+		return fmt.Errorf("pre-click not found (%s): %w", selector, err)
+	}
+
+	// Hidden/native checkbox — label ya wrapper click
+	tagName := strings.ToLower(el.MustEval(`() => this.tagName`).String())
+	if tagName == "input" {
+		inputType := strings.ToLower(el.MustEval(`() => this.type || ""`).String())
+		if inputType == "checkbox" && el.MustEval(`() => this.checked`).Bool() {
+			return nil
+		}
+	}
+
+	el.MustScrollIntoView().MustClick()
+	time.Sleep(300 * time.Millisecond)
+	return nil
 }
 
 func evaluateRules(rules []config.Rule, source string, statusCode int, isSuccess bool) string {

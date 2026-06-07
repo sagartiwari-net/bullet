@@ -17,6 +17,10 @@ browser:
   login_url: "https://example.com/login"
   email_selector: 'input[type="email"]'
   pass_selector: 'input[type="password"]'
+  # Terms / agreement checkbox — submit se pehle tick hoga
+  checkbox_selector: 'input[type="checkbox"]'
+  # pre_click_selectors:   # multiple clicks (optional)
+  #   - 'input[type="checkbox"]'
   submit_selector: 'button[type="submit"]'
   # chrome_path: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"  # optional
   wait_after_load: 4

