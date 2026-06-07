@@ -1,13 +1,12 @@
-# Nayi config banane ke liye is file ko copy karo aur values change karo.
-# Example: cp _template.yaml my-site.yaml
+# Nayi config banane ke liye is file ko copy karo:
+#   copy configs\_template.yaml configs\my-site.yaml
 
 name: "CHANGE_SITE_NAME"
 type: http
-wordlist_format: "email:pass"   # format: email:password
+wordlist_format: "email:pass"
 
 cloudflare:
-  enabled: false                # true karo agar CF protected site ho
-  mode: browser_solve
+  enabled: false
   solver:
     type: flaresolverr
     url: "http://localhost:8191"
@@ -15,27 +14,37 @@ cloudflare:
     enabled: true
     ttl: 25m
 
+# 2Captcha — bulk run ke liye zaroori agar site recaptcha use kare
+# API key: config mein ya environment variable CAPTCHA_API_KEY
+captcha:
+  enabled: false
+  provider: 2captcha
+  api_key: ""
+  type: recaptcha_v3
+  sitekey: "SITE_KEY_FROM_PAGE_SOURCE"
+  page_url: "https://example.com/login"
+  action: login
+  min_score: 0.3
+
 proxy: false
-timeout: 15
+timeout: 60
 
 request:
   method: POST
-  url: "CHANGE_LOGIN_URL"       # DevTools → Network → login request URL
+  url: "CHANGE_LOGIN_URL"
   headers:
     Content-Type: "application/json"
     Accept: "application/json"
-    User-Agent: "{{cf_user_agent}}"
+    Origin: "https://example.com"
+    Referer: "https://example.com/login"
   body: |
     {
       "email": "{{email}}",
       "password": "{{password}}",
       "agreementCheckbox": true,
-      "recaptchaToken": "PASTE_MANUAL_OR_SOLVER_TOKEN"
+      "recaptchaToken": "{{recaptcha_token}}"
     }
 
-# Tip: dynamic fields (jaise redirectTo) match mat karo — sirf stable text
-# Success example:  "success":true
-# Fail example:     "reason":"credentialsInvalid"  ya  "success":false
 success:
   - type: body_contains
     value: '"success":true'
@@ -45,10 +54,21 @@ fail:
     value: '"reason":"credentialsInvalid"'
   - type: body_contains
     value: '"success":false'
-  - type: status_code
-    value: "401"
 
 capture:
   - type: json_path
-    path: "plan"
-    save_as: "plan"
+    path: "redirectTo"
+    save_as: "redirect"
+
+follow_up:
+  enabled: false
+  method: GET
+  url: "https://example.com/"
+  headers:
+    Accept: "text/html"
+  subscription:
+    type: body_contains
+    value: "Upgrade Plan"
+    save_as: "subscription"
+    active_label: "active"
+    none_label: "free"

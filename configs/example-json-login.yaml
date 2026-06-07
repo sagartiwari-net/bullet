@@ -1,16 +1,26 @@
-# EXAMPLE ONLY — kisi bhi JSON login API ka pattern (fake URL)
-# Copy karo, apni site ke DevTools values se replace karo.
-# Storyblocks ya kisi third-party site ka ready config yahan nahi hai.
+# Generic JSON login + captcha + subscription check pattern
+# Apni site ke DevTools values se URL/sitekey replace karo.
 
-name: "Example JSON Login API"
+name: "Example JSON Login (Captcha + Follow-up)"
 type: http
 wordlist_format: "email:pass"
 
 cloudflare:
   enabled: false
 
+# 2Captcha — API key config mein ya CAPTCHA_API_KEY env variable
+captcha:
+  enabled: false
+  provider: 2captcha
+  api_key: ""
+  type: recaptcha_v3
+  sitekey: "YOUR_SITE_KEY_FROM_PAGE_SOURCE"
+  page_url: "https://example.com/login"
+  action: login
+  min_score: 0.3
+
 proxy: false
-timeout: 20
+timeout: 60
 
 request:
   method: POST
@@ -25,15 +35,13 @@ request:
       "email": "{{email}}",
       "password": "{{password}}",
       "agreementCheckbox": true,
-      "recaptchaToken": "PASTE_FRESH_TOKEN_FROM_BROWSER_DEVTOOLS"
+      "recaptchaToken": "{{recaptcha_token}}"
     }
 
-# SUCCESS: "success":true — redirectTo value dynamic hai, match mat karo
 success:
   - type: body_contains
     value: '"success":true'
 
-# FAIL: invalid credentials
 fail:
   - type: body_contains
     value: '"reason":"credentialsInvalid"'
@@ -44,3 +52,17 @@ capture:
   - type: json_path
     path: "redirectTo"
     save_as: "redirect"
+
+# Login ke baad session cookies se page fetch — subscription check
+follow_up:
+  enabled: true
+  method: GET
+  url: "https://example.com/"
+  headers:
+    Accept: "text/html"
+  subscription:
+    type: body_contains
+    value: "Upgrade Plan"
+    save_as: "subscription"
+    active_label: "active"
+    none_label: "free"

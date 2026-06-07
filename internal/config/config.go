@@ -10,12 +10,14 @@ import (
 )
 
 type Config struct {
-	Name   string `yaml:"name"`
-	Type   string `yaml:"type"`
+	Name           string `yaml:"name"`
+	Type           string `yaml:"type"`
 	WordlistFormat string `yaml:"wordlist_format"`
 
 	Cloudflare CloudflareConfig `yaml:"cloudflare"`
+	Captcha    CaptchaConfig    `yaml:"captcha"`
 	Request    RequestConfig    `yaml:"request"`
+	FollowUp   FollowUpConfig   `yaml:"follow_up"`
 	Proxy      bool             `yaml:"proxy"`
 	Timeout    int              `yaml:"timeout"`
 
@@ -23,6 +25,33 @@ type Config struct {
 	Fail    []Rule `yaml:"fail"`
 
 	Capture []CaptureRule `yaml:"capture"`
+}
+
+type CaptchaConfig struct {
+	Enabled  bool    `yaml:"enabled"`
+	Provider string  `yaml:"provider"`
+	APIKey   string  `yaml:"api_key"`
+	Type     string  `yaml:"type"`
+	SiteKey  string  `yaml:"sitekey"`
+	PageURL  string  `yaml:"page_url"`
+	Action   string  `yaml:"action"`
+	MinScore float64 `yaml:"min_score"`
+}
+
+type FollowUpConfig struct {
+	Enabled      bool              `yaml:"enabled"`
+	Method       string            `yaml:"method"`
+	URL          string            `yaml:"url"`
+	Headers      map[string]string `yaml:"headers"`
+	Subscription SubscriptionCheck `yaml:"subscription"`
+}
+
+type SubscriptionCheck struct {
+	Type   string `yaml:"type"`
+	Value  string `yaml:"value"`
+	SaveAs string `yaml:"save_as"`
+	Active string `yaml:"active_label"`
+	None   string `yaml:"none_label"`
 }
 
 type CloudflareConfig struct {

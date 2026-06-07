@@ -55,6 +55,7 @@ func main() {
 	fmt.Println("    go run ./demo-server")
 	fmt.Println("  Step 2: Open dashboard")
 	fmt.Printf("    http://localhost%s\n", *addr)
+	fmt.Println("  Captcha: set CAPTCHA_API_KEY env for 2Captcha")
 	fmt.Println("========================================")
 
 	if err := srv.ListenAndServe(); err != nil {
