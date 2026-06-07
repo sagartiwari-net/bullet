@@ -41,23 +41,26 @@ type CaptchaConfig struct {
 }
 
 type BrowserConfig struct {
-	LoginURL         string   `yaml:"login_url"`
-	EmailSelector    string   `yaml:"email_selector"`
-	PassSelector     string   `yaml:"pass_selector"`
-	CheckboxSelector string   `yaml:"checkbox_selector"`
+	LoginURL          string   `yaml:"login_url"`
+	SiteOrigin        string   `yaml:"site_origin"`
+	EmailSelector     string   `yaml:"email_selector"`
+	PassSelector      string   `yaml:"pass_selector"`
+	CheckboxSelector  string   `yaml:"checkbox_selector"`
 	PreClickSelectors []string `yaml:"pre_click_selectors"`
-	SubmitSelector   string   `yaml:"submit_selector"`
-	ChromePath       string   `yaml:"chrome_path"`
-	WaitAfterLoad    int    `yaml:"wait_after_load"`
-	WaitAfterSubmit  int    `yaml:"wait_after_submit"`
-	KeepOpenSeconds  int    `yaml:"keep_open_seconds"`
-	Headless         bool   `yaml:"headless"`
-	Devtools         bool   `yaml:"devtools"`
-	SuccessURL       string `yaml:"success_url"`
-	SuccessText      string `yaml:"success_text"`
-	FailText         string `yaml:"fail_text"`
-	CheckSubscribe   bool   `yaml:"check_subscribe"`
-	SubscribeText    string `yaml:"subscribe_text"`
+	SubmitSelector    string   `yaml:"submit_selector"`
+	ChromePath        string   `yaml:"chrome_path"`
+	WaitAfterLoad     int      `yaml:"wait_after_load"`
+	WaitAfterSubmit   int      `yaml:"wait_after_submit"`
+	KeepOpenSeconds   int      `yaml:"keep_open_seconds"`
+	ClearStorage      *bool    `yaml:"clear_storage"`
+	Headless          bool     `yaml:"headless"`
+	Devtools          bool     `yaml:"devtools"`
+	SuccessURL        string   `yaml:"success_url"`
+	SuccessText       string   `yaml:"success_text"`
+	FailText          string   `yaml:"fail_text"`
+	FailPageTexts     []string `yaml:"fail_page_texts"`
+	CheckSubscribe    bool     `yaml:"check_subscribe"`
+	SubscribeText     string   `yaml:"subscribe_text"`
 }
 
 type FollowUpConfig struct {

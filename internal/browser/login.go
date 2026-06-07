@@ -22,22 +22,25 @@ type Result struct {
 
 type LoginConfig struct {
 	LoginURL          string
+	SiteOrigin        string
 	EmailSelector     string
 	PassSelector      string
 	CheckboxSelector  string
 	PreClickSelectors []string
 	SubmitSelector    string
 	ChromePath        string
-	WaitAfterLoad   int
-	WaitAfterSubmit int
-	KeepOpenSeconds int
-	Headless        bool
-	Devtools        bool
-	SuccessURL      string
-	SuccessText     string
-	FailText        string
-	CheckSubscribe  bool
-	SubscribeText   string
+	WaitAfterLoad     int
+	WaitAfterSubmit   int
+	KeepOpenSeconds   int
+	ClearStorage      bool
+	Headless          bool
+	Devtools          bool
+	SuccessURL        string
+	SuccessText       string
+	FailText          string
+	FailPageTexts     []string
+	CheckSubscribe    bool
+	SubscribeText     string
 }
 
 func FromYAML(cfg *config.Config) LoginConfig {
@@ -53,24 +56,32 @@ func FromYAML(cfg *config.Config) LoginConfig {
 		preClick = append([]string{b.CheckboxSelector}, preClick...)
 	}
 
+	clearStorage := true
+	if b.ClearStorage != nil {
+		clearStorage = *b.ClearStorage
+	}
+
 	return LoginConfig{
 		LoginURL:          b.LoginURL,
+		SiteOrigin:        b.SiteOrigin,
 		EmailSelector:     b.EmailSelector,
 		PassSelector:      b.PassSelector,
 		CheckboxSelector:  b.CheckboxSelector,
 		PreClickSelectors: preClick,
 		SubmitSelector:    b.SubmitSelector,
 		ChromePath:        b.ChromePath,
-		WaitAfterLoad:   b.WaitAfterLoad,
-		WaitAfterSubmit: b.WaitAfterSubmit,
-		KeepOpenSeconds: b.KeepOpenSeconds,
-		Headless:        b.Headless,
-		Devtools:        b.Devtools,
-		SuccessURL:      b.SuccessURL,
-		SuccessText:     b.SuccessText,
-		FailText:        b.FailText,
-		CheckSubscribe:  b.CheckSubscribe,
-		SubscribeText:   b.SubscribeText,
+		WaitAfterLoad:     b.WaitAfterLoad,
+		WaitAfterSubmit:   b.WaitAfterSubmit,
+		KeepOpenSeconds:   b.KeepOpenSeconds,
+		ClearStorage:      clearStorage,
+		Headless:          b.Headless,
+		Devtools:          b.Devtools,
+		SuccessURL:        b.SuccessURL,
+		SuccessText:       b.SuccessText,
+		FailText:          b.FailText,
+		FailPageTexts:     b.FailPageTexts,
+		CheckSubscribe:    b.CheckSubscribe,
+		SubscribeText:     b.SubscribeText,
 	}
 }
 
@@ -92,6 +103,9 @@ func buildLauncher(cfg LoginConfig) *launcher.Launcher {
 	}
 	if cfg.Devtools {
 		l = l.Devtools(true)
+	}
+	if cfg.ClearStorage {
+		l = withFreshProfile(l)
 	}
 	return l
 }
@@ -133,12 +147,40 @@ func Check(ctx context.Context, email, password string, cfg LoginConfig, rulesSu
 	}
 	defer browser.MustClose()
 
-	page, err := browser.Page(proto.TargetCreateTarget{URL: cfg.LoginURL})
+	origin := siteOrigin(cfg.LoginURL, cfg.SiteOrigin)
+
+	session, err := browser.Incognito()
+	if err != nil {
+		out.Status = "RETRY"
+		out.Detail = "incognito session: " + err.Error()
+		return out
+	}
+	defer session.MustClose()
+
+	if cfg.ClearStorage {
+		clearAllStorage(session, nil, origin)
+	}
+
+	page, err := session.Page(proto.TargetCreateTarget{URL: "about:blank"})
 	if err != nil {
 		out.Detail = err.Error()
 		return out
 	}
-	defer page.Close()
+	defer func() {
+		if cfg.ClearStorage {
+			clearAllStorage(session, page, origin)
+		}
+		page.Close()
+	}()
+
+	if err := page.Navigate(cfg.LoginURL); err != nil {
+		out.Detail = "navigate login: " + err.Error()
+		return out
+	}
+	if cfg.ClearStorage {
+		clearAllStorage(session, page, origin)
+		_ = page.Reload()
+	}
 
 	page.MustWaitLoad()
 	time.Sleep(time.Duration(cfg.WaitAfterLoad) * time.Second)
@@ -191,8 +233,9 @@ func Check(ctx context.Context, email, password string, cfg LoginConfig, rulesSu
 	// API response capture via network — check page for fail/success text
 	combined := html + "\n" + currentURL
 
-	if cfg.FailText != "" && strings.Contains(combined, cfg.FailText) {
+	if msg := matchFailPage(combined, cfg); msg != "" {
 		out.Status = "FAIL"
+		out.Detail = msg
 		return out
 	}
 	if cfg.SuccessURL != "" && strings.Contains(currentURL, cfg.SuccessURL) {
@@ -221,6 +264,28 @@ func Check(ctx context.Context, email, password string, cfg LoginConfig, rulesSu
 	}
 	out.Capture["url"] = currentURL
 	return out
+}
+
+func matchFailPage(combined string, cfg LoginConfig) string {
+	texts := append([]string{cfg.FailText}, cfg.FailPageTexts...)
+	texts = append(texts,
+		"don't recognize that username or password",
+		"We don't recognize that username or password",
+		"credentialsInvalid",
+		"invalid email or password",
+	)
+	seen := map[string]bool{}
+	for _, t := range texts {
+		t = strings.TrimSpace(t)
+		if t == "" || seen[t] {
+			continue
+		}
+		seen[t] = true
+		if strings.Contains(combined, t) {
+			return "invalid credentials — " + t
+		}
+	}
+	return ""
 }
 
 func clickPreAction(page *rod.Page, selector string) error {

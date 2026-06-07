@@ -13,11 +13,16 @@ timeout: 90
 
 browser:
   login_url: "https://www.storyblocks.com/login"
+  site_origin: "https://www.storyblocks.com"
   email_selector: 'input[type="email"]'
   pass_selector: 'input[type="password"]'
   checkbox_selector: 'input[type="checkbox"]'
   submit_selector: 'button[type="submit"]'
   chrome_path: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+  clear_storage: true
+  fail_page_texts:
+    - "don't recognize that username or password"
+    - "We don't recognize that username or password"
   wait_after_load: 5
   wait_after_submit: 10
   keep_open_seconds: 20
