@@ -20,18 +20,21 @@ type Result struct {
 }
 
 type LoginConfig struct {
-	LoginURL       string
-	EmailSelector  string
-	PassSelector   string
-	SubmitSelector string
-	WaitAfterLoad  int
+	LoginURL        string
+	EmailSelector   string
+	PassSelector    string
+	SubmitSelector  string
+	ChromePath      string
+	WaitAfterLoad   int
 	WaitAfterSubmit int
-	Headless       bool
-	SuccessURL     string
-	SuccessText    string
-	FailText       string
-	CheckSubscribe bool
-	SubscribeText  string
+	KeepOpenSeconds int
+	Headless        bool
+	Devtools        bool
+	SuccessURL      string
+	SuccessText     string
+	FailText        string
+	CheckSubscribe  bool
+	SubscribeText   string
 }
 
 func FromYAML(cfg *config.Config) LoginConfig {
@@ -47,15 +50,40 @@ func FromYAML(cfg *config.Config) LoginConfig {
 		EmailSelector:   b.EmailSelector,
 		PassSelector:    b.PassSelector,
 		SubmitSelector:  b.SubmitSelector,
+		ChromePath:      b.ChromePath,
 		WaitAfterLoad:   b.WaitAfterLoad,
 		WaitAfterSubmit: b.WaitAfterSubmit,
+		KeepOpenSeconds: b.KeepOpenSeconds,
 		Headless:        b.Headless,
+		Devtools:        b.Devtools,
 		SuccessURL:      b.SuccessURL,
 		SuccessText:     b.SuccessText,
 		FailText:        b.FailText,
 		CheckSubscribe:  b.CheckSubscribe,
 		SubscribeText:   b.SubscribeText,
 	}
+}
+
+func buildLauncher(cfg LoginConfig) *launcher.Launcher {
+	l := launcher.New().
+		Leakless(false). // Windows Defender blocks leakless.exe on RDP
+		Headless(cfg.Headless).
+		Set("disable-blink-features", "AutomationControlled").
+		Set("window-size", "1280,900")
+
+	chromePath := cfg.ChromePath
+	if chromePath == "" {
+		if found, ok := launcher.LookPath(); ok {
+			chromePath = found
+		}
+	}
+	if chromePath != "" {
+		l = l.Bin(chromePath)
+	}
+	if cfg.Devtools {
+		l = l.Devtools(true)
+	}
+	return l
 }
 
 func Check(ctx context.Context, email, password string, cfg LoginConfig, rulesSuccess, rulesFail []config.Rule) Result {
@@ -66,18 +94,26 @@ func Check(ctx context.Context, email, password string, cfg LoginConfig, rulesSu
 		return out
 	}
 
-	l := launcher.New().
-		Headless(cfg.Headless).
-		Set("disable-blink-features", "AutomationControlled")
+	l := buildLauncher(cfg)
 
 	controlURL, err := l.Launch()
 	if err != nil {
 		out.Status = "RETRY"
-		out.Detail = "chrome launch failed: " + err.Error() + " (install Google Chrome)"
+		detail := "chrome launch failed: " + err.Error()
+		if strings.Contains(strings.ToLower(err.Error()), "virus") ||
+			strings.Contains(strings.ToLower(err.Error()), "leakless") {
+			detail += " — Windows Defender ne block kiya; update pull karo (leakless off fix)"
+		} else {
+			detail += " — Google Chrome install karo ya browser.chrome_path set karo"
+		}
+		out.Detail = detail
 		return out
 	}
 	defer l.Cleanup()
 	defer l.Kill()
+	if cfg.KeepOpenSeconds > 0 {
+		defer time.Sleep(time.Duration(cfg.KeepOpenSeconds) * time.Second)
+	}
 
 	browser := rod.New().ControlURL(controlURL)
 	if err := browser.Connect(); err != nil {

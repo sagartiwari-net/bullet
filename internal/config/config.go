@@ -41,18 +41,21 @@ type CaptchaConfig struct {
 }
 
 type BrowserConfig struct {
-	LoginURL        string `yaml:"login_url"`
-	EmailSelector   string `yaml:"email_selector"`
-	PassSelector    string `yaml:"pass_selector"`
-	SubmitSelector  string `yaml:"submit_selector"`
-	WaitAfterLoad   int    `yaml:"wait_after_load"`
-	WaitAfterSubmit int    `yaml:"wait_after_submit"`
-	Headless        bool   `yaml:"headless"`
-	SuccessURL      string `yaml:"success_url"`
-	SuccessText     string `yaml:"success_text"`
-	FailText        string `yaml:"fail_text"`
-	CheckSubscribe  bool   `yaml:"check_subscribe"`
-	SubscribeText   string `yaml:"subscribe_text"`
+	LoginURL         string `yaml:"login_url"`
+	EmailSelector    string `yaml:"email_selector"`
+	PassSelector     string `yaml:"pass_selector"`
+	SubmitSelector   string `yaml:"submit_selector"`
+	ChromePath       string `yaml:"chrome_path"`
+	WaitAfterLoad    int    `yaml:"wait_after_load"`
+	WaitAfterSubmit  int    `yaml:"wait_after_submit"`
+	KeepOpenSeconds  int    `yaml:"keep_open_seconds"`
+	Headless         bool   `yaml:"headless"`
+	Devtools         bool   `yaml:"devtools"`
+	SuccessURL       string `yaml:"success_url"`
+	SuccessText      string `yaml:"success_text"`
+	FailText         string `yaml:"fail_text"`
+	CheckSubscribe   bool   `yaml:"check_subscribe"`
+	SubscribeText    string `yaml:"subscribe_text"`
 }
 
 type FollowUpConfig struct {

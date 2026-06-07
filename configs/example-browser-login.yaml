@@ -18,9 +18,12 @@ browser:
   email_selector: 'input[type="email"]'
   pass_selector: 'input[type="password"]'
   submit_selector: 'button[type="submit"]'
+  # chrome_path: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"  # optional
   wait_after_load: 4
   wait_after_submit: 6
-  headless: true
+  keep_open_seconds: 15   # debug: browser band hone se pehle wait (0 = turant close)
+  headless: false         # false = visible Chrome (debug ke liye)
+  devtools: false         # true = DevTools auto open
   success_url: "/member"
   success_text: "Upgrade Plan"
   fail_text: "credentialsInvalid"
