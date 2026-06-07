@@ -16,6 +16,7 @@ import (
 	"authchecker/internal/config"
 	"authchecker/internal/runner"
 	"authchecker/internal/storage"
+	"time"
 )
 
 //go:embed static/*
@@ -32,6 +33,9 @@ type Server struct {
 	mu     sync.Mutex
 	engine *runner.Engine
 	runID  int64
+
+	lastToken     string
+	lastTokenTime time.Time
 }
 
 type Options struct {
@@ -69,8 +73,100 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/stats", s.handleStats)
 	mux.HandleFunc("/api/hits", s.handleHits)
 	mux.HandleFunc("/api/test-single", s.handleTestSingle)
+	mux.HandleFunc("/api/capture-token", s.handleCaptureToken)
+	mux.HandleFunc("/api/last-token", s.handleLastToken)
+	mux.HandleFunc("/token-hook.js", s.handleTokenHookJS)
 
 	return mux
+}
+
+func (s *Server) handleCaptureToken(w http.ResponseWriter, r *http.Request) {
+	setCORS(w)
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if r.Method != http.MethodPost {
+		jsonError(w, "method not allowed", 405)
+		return
+	}
+
+	var req struct {
+		Token string `json:"token"`
+		URL   string `json:"url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Token == "" {
+		jsonError(w, "token required", 400)
+		return
+	}
+
+	s.mu.Lock()
+	s.lastToken = req.Token
+	s.lastTokenTime = time.Now()
+	s.mu.Unlock()
+
+	fmt.Printf("token captured (%d chars) from %s\n", len(req.Token), req.URL)
+	jsonOK(w, map[string]interface{}{"ok": true, "length": len(req.Token)})
+}
+
+func (s *Server) handleLastToken(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	token := s.lastToken
+	captured := s.lastTokenTime
+	s.mu.Unlock()
+
+	age := int64(0)
+	if !captured.IsZero() {
+		age = int64(time.Since(captured).Seconds())
+	}
+	jsonOK(w, map[string]interface{}{
+		"token":      token,
+		"length":     len(token),
+		"age_sec":    age,
+		"captured_at": captured.Format(time.RFC3339),
+	})
+}
+
+func (s *Server) handleTokenHookJS(w http.ResponseWriter, r *http.Request) {
+	setCORS(w)
+	w.Header().Set("Content-Type", "application/javascript")
+	fmt.Fprint(w, tokenHookScript())
+}
+
+func setCORS(w http.ResponseWriter) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+}
+
+func tokenHookScript() string {
+	return `(function(){
+  if(window.__authCheckerHook)return;
+  window.__authCheckerHook=true;
+  const API='http://localhost:8080/api/capture-token';
+  function send(url,body){
+    try{
+      const j=typeof body==='string'?JSON.parse(body):body;
+      const t=j&&(j.recaptchaToken||j['g-recaptcha-response']);
+      if(!t)return;
+      fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({token:t,url:url||location.href})});
+      try{navigator.clipboard.writeText(t);}catch(e){}
+      console.log('[AuthChecker] token sent to dashboard ('+t.length+' chars)');
+    }catch(e){}
+  }
+  const _fetch=window.fetch;
+  window.fetch=function(input,init){
+    const url=typeof input==='string'?input:(input&&input.url)||'';
+    if(init&&init.body)send(url,init.body);
+    return _fetch.apply(this,arguments);
+  };
+  const _open=XMLHttpRequest.prototype.open;
+  const _send=XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.open=function(m,u){this._hookUrl=u;return _open.apply(this,arguments);};
+  XMLHttpRequest.prototype.send=function(body){if(body)send(this._hookUrl,body);return _send.apply(this,arguments);};
+  alert('AuthChecker hook active! Ab login submit karo — token auto dashboard par jayega.');
+})();`
 }
 
 func (s *Server) ListenAndServe() error {
