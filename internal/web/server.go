@@ -338,12 +338,31 @@ func (s *Server) handleHits(w http.ResponseWriter, r *http.Request) {
 }
 
 type testRequest struct {
-	Config          string `json:"config"`
-	Email           string `json:"email"`
-	Password        string `json:"password"`
-	Proxy           string `json:"proxy"`
-	RecaptchaToken  string `json:"recaptcha_token"`
-	Cookies         string `json:"cookies"`
+	Config         string `json:"config"`
+	Combo          string `json:"combo"`
+	Email          string `json:"email"`
+	Password       string `json:"password"`
+	Proxy          string `json:"proxy"`
+	RecaptchaToken string `json:"recaptcha_token"`
+	Cookies        string `json:"cookies"`
+}
+
+func resolveTestCredentials(req testRequest, wordlistFormat string) (email, password string, err error) {
+	if req.Password != "" && req.Email != "" && !strings.Contains(req.Email, ":") {
+		return req.Email, req.Password, nil
+	}
+	line := strings.TrimSpace(req.Combo)
+	if line == "" {
+		line = strings.TrimSpace(req.Email)
+	}
+	if line == "" {
+		return "", "", fmt.Errorf("combo paste karo: email:password")
+	}
+	email, password, ok := config.ParseWordlistLine(line, wordlistFormat)
+	if !ok {
+		return "", "", fmt.Errorf("invalid combo format — use email:password")
+	}
+	return email, password, nil
 }
 
 func (s *Server) handleTestSingle(w http.ResponseWriter, r *http.Request) {
@@ -364,6 +383,12 @@ func (s *Server) handleTestSingle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	email, password, err := resolveTestCredentials(req, cfg.WordlistFormat)
+	if err != nil {
+		jsonError(w, err.Error(), 400)
+		return
+	}
+
 	var cfMgr *cf.Manager
 	if cfg.Cloudflare.Enabled {
 		cfMgr = s.cfManager
@@ -371,8 +396,8 @@ func (s *Server) handleTestSingle(w http.ResponseWriter, r *http.Request) {
 
 	bot := runner.NewBot(cfg, cfMgr)
 	result := bot.Check(context.Background(), runner.CheckInput{
-		Email:          req.Email,
-		Password:       req.Password,
+		Email:          email,
+		Password:       password,
 		ProxyURL:       req.Proxy,
 		RecaptchaToken: req.RecaptchaToken,
 		CustomCookies:  req.Cookies,

@@ -135,10 +135,9 @@
 
       <div class="card">
         <h2>Test Single</h2>
-        <label>Email / Username</label>
-        <input id="testEmail" type="text" placeholder="test@demo.com">
-        <label>Password</label>
-        <input id="testPass" type="text" placeholder="password123">
+        <label>Combo — email:password (wordlist jaisa, ek line paste)</label>
+        <input id="testCombo" type="text" placeholder="user@gmail.com:Password@123#" oninput="previewCombo()">
+        <div class="token-hint" id="comboPreview" style="margin-bottom:12px;color:#71717a">email:password format paste karo</div>
         <div id="browserModeHint" class="note" style="display:none;margin-bottom:12px;">
           <b>Browser mode</b> — Chrome khulega (YAML: <code>headless: false</code>), reCAPTCHA automatic. Token ki zaroorat nahi. Debug: <code>keep_open_seconds: 15</code>
         </div>
@@ -292,6 +291,31 @@
       }
     }
 
+    function parseComboLine(raw) {
+      const line = (raw || '').trim();
+      const idx = line.indexOf(':');
+      if (idx > 0 && idx < line.length - 1) {
+        return {
+          email: line.slice(0, idx).trim(),
+          password: line.slice(idx + 1).trim(),
+          ok: true,
+        };
+      }
+      return { email: line, password: '', ok: false };
+    }
+
+    function previewCombo() {
+      const p = parseComboLine(document.getElementById('testCombo').value);
+      const el = document.getElementById('comboPreview');
+      if (p.ok) {
+        el.textContent = '✓ ' + p.email + ' : ' + (p.password ? '•'.repeat(Math.min(p.password.length, 12)) : '(no pass)');
+        el.style.color = '#22c55e';
+      } else {
+        el.textContent = 'email:password format chahiye — example: user@gmail.com:Pass@123';
+        el.style.color = '#71717a';
+      }
+    }
+
     async function testSingle() {
       const configFile = document.getElementById('configSelect').value;
       const browser = isBrowserConfig(configFile);
@@ -300,14 +324,21 @@
         alert('reCAPTCHA token paste karo — textarea mein Ctrl+V');
         return;
       }
+      const combo = document.getElementById('testCombo').value.trim();
+      const parsed = parseComboLine(combo);
+      if (!parsed.ok || !parsed.password) {
+        alert('Combo format paste karo: email:password');
+        return;
+      }
       const btn = document.getElementById('btnTestOne');
       const resultEl = document.getElementById('testResult');
       btn.disabled = true;
       resultEl.textContent = browser ? 'Chrome chal raha hai... 15-30 sec wait karo' : 'Checking...';
       const body = {
         config: configFile,
-        email: document.getElementById('testEmail').value,
-        password: document.getElementById('testPass').value,
+        combo: combo,
+        email: parsed.email,
+        password: parsed.password,
         recaptcha_token: browser ? '' : token,
         cookies: browser ? '' : document.getElementById('testCookies').value.trim(),
       };
