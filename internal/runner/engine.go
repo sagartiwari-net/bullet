@@ -200,11 +200,13 @@ func loadWordlist(path string) ([]string, error) {
 
 	var lines []string
 	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line != "" {
-			lines = append(lines, line)
+		line := scanner.Text()
+		if strings.TrimSpace(line) == "" || strings.HasPrefix(strings.TrimSpace(line), "#") {
+			continue
 		}
+		lines = append(lines, line)
 	}
 	return lines, scanner.Err()
 }

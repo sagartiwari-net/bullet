@@ -133,7 +133,7 @@ func Load(path string) (*Config, error) {
 		cfg.Timeout = 15
 	}
 	if cfg.WordlistFormat == "" {
-		cfg.WordlistFormat = "email:pass"
+		cfg.WordlistFormat = "combo"
 	}
 	if cfg.Type == "" {
 		cfg.Type = "http"
@@ -192,20 +192,3 @@ func ConfigPath(dir, name string) string {
 	return filepath.Join(dir, name)
 }
 
-func ParseWordlistLine(line, format string) (email, password string, ok bool) {
-	line = strings.TrimSpace(line)
-	if line == "" || strings.HasPrefix(line, "#") {
-		return "", "", false
-	}
-
-	sep := ":"
-	if format == "user:pass" {
-		// same separator
-	}
-
-	parts := strings.SplitN(line, sep, 2)
-	if len(parts) != 2 {
-		return "", "", false
-	}
-	return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]), true
-}

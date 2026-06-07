@@ -1,0 +1,8 @@
+# Combo wordlist format — har line: email:password
+# Trailing tab/space theek hai, auto clean hoga
+# Password mein @ $ # : sab chalega (sirf PEHLA colon split hoga)
+
+user@gmail.com:MyPass@1664@#
+test@site.com:Wevic2022$
+info@company.com.au:$Editors123
+admin@domain.me:Otto@2014

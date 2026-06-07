@@ -3,7 +3,11 @@
 
 name: "CHANGE_SITE_NAME"
 type: http
-wordlist_format: "email:pass"
+# Wordlist format:
+#   combo       → email:password (Silver Bullet style, trailing tab OK)
+#   email:pass  → same as combo
+#   tab         → email<TAB>password
+wordlist_format: "combo"
 
 cloudflare:
   enabled: false

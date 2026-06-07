@@ -3,7 +3,7 @@
 
 name: "Storyblocks Browser"
 type: browser
-wordlist_format: "email:pass"
+wordlist_format: "combo"
 
 captcha:
   enabled: false
